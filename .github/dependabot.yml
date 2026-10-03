@@ -1,0 +1,32 @@
+# Dependabot version updates. Docs:
+# https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+version: 2
+updates:
+  # Actions used by .github/workflows/ (checkout, cache).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "CI"
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # Swift packages declared in Package.swift and pinned in Package.resolved. Today that is Sparkle,
+  # which signs and verifies in-app updates, so review its updates like a security change and run
+  # scripts/test-release-checks.sh as well as `swift test`.
+  - package-ecosystem: "swift"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "Deps"
+    open-pull-requests-limit: 3

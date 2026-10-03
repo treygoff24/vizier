@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>net.praxient.dictum</string>
+  <key>CFBundleName</key><string>Vizier</string>
+  <key>CFBundleDisplayName</key><string>Vizier</string>
+  <key>CFBundleExecutable</key><string>Vizier</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>Vizier</string>
+  <key>CFBundleShortVersionString</key><string>0.0.0</string>
+  <key>CFBundleVersion</key><string>0</string>
+  <key>SUFeedURL</key><string>https://github.com/treygoff24/vizier/releases/latest/download/appcast.xml</string>
+  <key>SUPublicEDKey</key><string>lptKGU8bkTygN/44AgjE/S4OuoX/tM8tMBY+w3cm1Ow=</string>
+  <key>LSMinimumSystemVersion</key><string>27.0</string>
+  <key>LSUIElement</key><true/>
+  <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Trey Goff and the Vizier contributors. GPL-3.0-only.</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>ATSApplicationFontsPath</key><string>Fonts</string>
+  <key>NSMicrophoneUsageDescription</key><string>Vizier records your voice while you dictate and turns it into text. Recordings stay on this Mac. In a cloud mode (ElevenLabs or Gemini) the audio is also sent to that provider.</string>
+  <key>NSAppleEventsUsageDescription</key><string>Vizier can paste through System Events on keyboard layouts that remap V under Command.</string>
+</dict>
+</plist>

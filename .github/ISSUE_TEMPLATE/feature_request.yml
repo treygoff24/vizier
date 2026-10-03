@@ -1,0 +1,125 @@
+name: Feature request
+description: Suggest a new capability or a change to existing behavior. Describe the problem first; the solution is optional.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Vizier is a small, privacy-first dictation app with one maintainer. Requests that start from a concrete problem, and say what they would cost in privacy and complexity, are the easiest to weigh.
+
+        **Never paste dictated text, audio, API keys or personal file paths here.** Something broken is a [bug report](https://github.com/treygoff24/vizier/issues/new?template=bug_report.yml), not a feature request. For a security vulnerability, use [private vulnerability reporting](https://github.com/treygoff24/vizier/security/advisories/new).
+
+        **Filing with `gh issue create` or the API?** GitHub's CLI cannot use issue forms. Write one `### <field label>` heading per field below, using the labels exactly as they appear here, in this order. [SUPPORT.md](https://github.com/treygoff24/vizier/blob/main/SUPPORT.md#filing-without-the-form-gh-api-agents) explains the pattern.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched [open and closed issues](https://github.com/treygoff24/vizier/issues?q=is%3Aissue) and this has not been requested or declined.
+          required: true
+        - label: I checked the [docs](https://github.com/treygoff24/vizier/blob/main/docs/README.md), including [modes and configuration](https://github.com/treygoff24/vizier/blob/main/docs/modes-and-config.md), and this is not already possible.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem or use case
+      description: What are you trying to do that Vizier makes hard or impossible today? Describe the situation, not the solution. Use made-up examples, never real dictation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should Vizier do instead? Describe what the user sees and does. If it needs a setting, a config key or a new mode field, say so.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and workarounds you tried (optional)
+      description: Existing modes, config, replacements or other tools, and why they fall short.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Hotkey
+        - Paste into another app
+        - Recording and the strip
+        - Transcription engines or modes
+        - Cleanup, vocabulary or replacements
+        - History and Re-run
+        - Settings, setup guide or permissions
+        - Install, update or launch at login
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: privacy-impact
+    attributes:
+      label: Privacy impact
+      description: Vizier runs on-device by default, has no analytics and no account, and contacts only the providers a user turns on (see docs/privacy.md). Pick the best fit; "unsure" is a fine answer.
+      options:
+        - No new network traffic and no new data stored
+        - Stores new data on the Mac
+        - Sends data to a new host or provider
+        - Reads more of the user's system, such as keystrokes, other apps or files
+        - Unsure
+    validations:
+      required: true
+  - type: textarea
+    id: pointers
+    attributes:
+      label: Implementation pointers (optional)
+      description: Files, types and functions where the change would go (for example `Sources/VizierEngine/Config/VizierConfig.swift`, `parseSettings`), and the tests you would add. Say whether you checked this by reading the code or by running it.
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you or your agent open a pull request?
+      options:
+        - "Yes: I will open a pull request"
+        - "Maybe: I would with guidance on the approach"
+        - "No: I am only suggesting it"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Vizier version and build (optional)
+      description: Settings › About, or run `/Applications/Vizier.app/Contents/MacOS/Vizier --version` in a terminal. Helps tell whether the feature already exists in a newer build.
+      placeholder: "Vizier 0.1.0 (1), updater eligible"
+  - type: dropdown
+    id: filed-by-agent
+    attributes:
+      label: Was this issue filed by an AI agent on behalf of a user?
+      description: Agent-filed issues are welcome. This only tells the maintainer how to read the request.
+      options:
+        - "No: a person wrote and filed this"
+        - "Yes: an AI agent filed this on behalf of a user"
+    validations:
+      required: true
+  - type: dropdown
+    id: human-reviewed
+    attributes:
+      label: Did a person review this request and want it?
+      options:
+        - "Yes: a person read this and wants the feature"
+        - "No: an agent proposed it with no person confirming they want it"
+    validations:
+      required: true
+  - type: textarea
+    id: agent-details
+    attributes:
+      label: Agent details (only if filed by an agent)
+      description: The agent and model name, and what the person it works for asked it to do.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy and conduct
+      options:
+        - label: I did not include any transcript or dictated text, audio, API keys, or personal file paths.
+          required: true
+        - label: I agree to follow this project's [Code of Conduct](https://github.com/treygoff24/vizier/blob/main/CODE_OF_CONDUCT.md).
+          required: true

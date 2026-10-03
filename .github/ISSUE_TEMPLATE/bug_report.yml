@@ -1,0 +1,189 @@
+name: Bug report
+description: Something in Vizier does not work as documented. Takes a few minutes; every required field is there so a maintainer can act without a follow-up question.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Vizier is a free, open-source dictation app with one maintainer, so a complete report is the fastest way to a fix.
+
+        **Never paste dictated text, audio, API keys or personal file paths into this issue.** Vizier's own logs mark transcripts as private, but check what you paste anyway. For a security vulnerability, do not file an issue: use [private vulnerability reporting](https://github.com/treygoff24/vizier/security/advisories/new).
+
+        **Filing with `gh issue create` or the API?** GitHub's CLI cannot use issue forms. Write the body with one `### <field label>` heading per field below, using the labels exactly as they appear here, in this order. [SUPPORT.md](https://github.com/treygoff24/vizier/blob/main/SUPPORT.md#filing-without-the-form-gh-api-agents) has a copy-paste skeleton. A maintainer may close a report that leaves out required fields.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched [open and closed issues](https://github.com/treygoff24/vizier/issues?q=is%3Aissue) and this is not a duplicate.
+          required: true
+        - label: I read the [troubleshooting page](https://github.com/treygoff24/vizier/blob/main/docs/troubleshooting.md) and it does not solve this.
+          required: true
+        - label: This is not a security vulnerability. (Those go to [private vulnerability reporting](https://github.com/treygoff24/vizier/security/advisories/new), not here.)
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Vizier version and build
+      description: |
+        Settings › About shows it, or run `/Applications/Vizier.app/Contents/MacOS/Vizier --version` in a terminal (it prints the version, the build number and updater status, then exits; it does not touch a running copy). Use the path of your copy if it is not in /Applications.
+      placeholder: "Vizier 0.1.0 (1), updater eligible"
+    validations:
+      required: true
+  - type: dropdown
+    id: install-source
+    attributes:
+      label: How you installed it
+      description: A copy you built yourself is signed ad hoc, so macOS drops the Accessibility grant after each rebuild; that explains many hotkey and paste problems.
+      options:
+        - Released DMG from GitHub Releases
+        - Built from source (scripts/build-app.sh)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: Output of `sw_vers -productVersion` (and `sw_vers -buildVersion` if you can).
+      placeholder: "27.0 (build 25A1234)"
+    validations:
+      required: true
+  - type: input
+    id: chip
+    attributes:
+      label: Mac chip
+      description: Output of `sysctl -n machdep.cpu.brand_string`. Vizier supports Apple Silicon only.
+      placeholder: "Apple M4 Pro"
+    validations:
+      required: true
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Transcription mode in use
+      description: The mode shown in the menu bar popover or Settings › Transcription. Pick the one that was active when the problem happened.
+      options:
+        - Apple (on-device, the default)
+        - Scribe (ElevenLabs, cloud)
+        - Gemini Clean (Google, cloud)
+        - Gemini SMART (Google, cloud)
+        - Custom mode (describe the engines under Additional context)
+        - Local Whisper (experimental, unsupported)
+        - Not tied to a mode (install, update, window or setup problem)
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Your best guess at where the problem is. It only routes the issue.
+      options:
+        - Hotkey
+        - Paste into another app
+        - Recording and the strip
+        - Transcription accuracy or engine failure
+        - Cleanup, vocabulary or replacements
+        - History and Re-run
+        - Settings, setup guide or permissions
+        - Install, update or launch at login
+        - Crash or hang
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often it happens
+      options:
+        - Every time
+        - Sometimes
+        - Once so far
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Exact steps to reproduce
+      description: Numbered steps from a fresh start, including the frontmost app you pasted into and any non-default setting. Use a made-up sentence for what you said (for example "testing one two three"), never real dictation.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen, and where the docs say it should.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead. Include the strip's status word (PASTED, RE-ROUTED, HELD, FAILED, CANCELLED, DELAYED or BATCH) and its one-line reason, and the take's reason in History's detail pane. Copy the status and reason only, not the transcript.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        Run this in Terminal right after reproducing the problem (adjust `--last` if more time has passed) and paste the output:
+
+        `log show --last 10m --predicate 'subsystem == "net.praxient.dictum"' --info`
+
+        (The logging subsystem keeps the project's old name, net.praxient.dictum, on purpose.)
+
+        **Before you paste, read it and remove:** any dictated or transcribed text, API keys, email addresses, and personal paths such as your home folder name (replace them with `<redacted>`). Vizier logs transcripts, config values and file paths as private, so macOS should already show `<private>` for them, but you are responsible for the check.
+
+        If it is long, keep the lines around the failure, with a few lines of context before and after. If the log shows nothing, write "no log lines". Do not attach History's audio files or the history database.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-fix
+    attributes:
+      label: Proposed fix or pointers (optional)
+      description: If you know or suspect the cause, name the files, functions and line ranges (for example `Sources/Vizier/TakeController.swift`, `TakeController`). Say whether you verified it by running code or only by reading it.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context (optional)
+      description: Other apps that might interfere (key remappers, other dictation tools), non-default settings, and, for a custom mode, the engines it uses (engine names only, no keys, no vocabulary). Screenshots are welcome if they show no dictated text.
+  - type: dropdown
+    id: filed-by-agent
+    attributes:
+      label: Was this issue filed by an AI agent on behalf of a user?
+      description: Agent-filed issues are welcome. This only tells the maintainer how to read the report.
+      options:
+        - "No: a person wrote and filed this"
+        - "Yes: an AI agent filed this on behalf of a user"
+    validations:
+      required: true
+  - type: dropdown
+    id: human-reproduced
+    attributes:
+      label: Did a human reproduce this on their own Mac?
+      options:
+        - "Yes: a person ran these steps and saw the problem"
+        - "No: an agent ran the steps and saw the problem, no person confirmed it"
+        - "No: this is inferred from code, docs or logs and was not reproduced"
+    validations:
+      required: true
+  - type: textarea
+    id: agent-details
+    attributes:
+      label: Agent details (only if filed by an agent)
+      description: The agent and model name, which commands it ran against Vizier, and which statements in this report it observed versus inferred. Say what the person it works for asked it to do.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy and conduct
+      options:
+        - label: I did not include any transcript or dictated text, audio, API keys, or personal file paths, in this report or its attachments.
+          required: true
+        - label: I agree to follow this project's [Code of Conduct](https://github.com/treygoff24/vizier/blob/main/CODE_OF_CONDUCT.md).
+          required: true

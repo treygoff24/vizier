@@ -1,0 +1,43 @@
+Vizier
+Copyright (C) 2026 Trey Goff and the Vizier contributors
+
+Vizier is licensed under the GNU General Public License, version 3 only
+(GPL-3.0-only). See LICENSE. It is "only" and not "or later" because Vizier
+includes code from VoiceInk, and VoiceInk grants GPLv3 with no later-version
+clause.
+
+Vizier is not affiliated with or endorsed by Apple, Google, ElevenLabs or VoiceInk.
+
+Vizier was called Dictum until 2026-10-03; its bundle identifier,
+net.praxient.dictum, keeps that name.
+
+The app icon, the sounds in Resources/Sounds/, and the screenshots are original
+work, released under the same license as the rest of the repository. The sounds
+were synthesized from the author's own recipes.
+
+Vizier includes work from the following projects.
+
+VoiceInk v2.20
+  https://github.com/Beingpax/VoiceInk (tag v2.20)
+  Copyright (C) VoiceInk contributors, primarily Prakash Joshi Pax (Beingpax).
+  Licensed under the GNU General Public License, version 3. Upstream's grant is
+  the license statement in its README; its LICENSE file is truncated.
+  Six files are copied or adapted from it. Each keeps its attribution header:
+    Sources/VizierEngine/Capture/HALCapture.swift
+    Sources/VizierEngine/Replacements/WordReplacer.swift
+    Sources/Vizier/Hotkey/RecordingShortcutManager.swift
+    Sources/Vizier/Hotkey/ShortcutMonitor.swift
+    Sources/Vizier/Hotkey/UserSessionInputPolicy.swift
+    Sources/Vizier/Paste/Paster.swift
+
+Archivo
+  Copyright 2020 The Archivo Project Authors (https://github.com/Omnibus-Type/Archivo)
+  Licensed under the SIL Open Font License, Version 1.1.
+  The font is bundled in Resources/Fonts/, with its license in Resources/Fonts/OFL.txt.
+
+Sparkle 2.10.0
+  https://sparkle-project.org (https://github.com/sparkle-project/Sparkle)
+  Copyright the Sparkle Project and its contributors. Vizier embeds the framework
+  in the app bundle and uses it for automatic updates in release builds. Sparkle's
+  license (MIT, with the licenses of its bundled external components) is
+  reproduced in THIRD-PARTY-LICENSES.

@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/treygoff24/vizier/security/advisories/new
+    about: Do not open a public issue for a vulnerability. Use GitHub's private vulnerability reporting; see SECURITY.md.
+  - name: Ask a question or share an idea
+    url: https://github.com/treygoff24/vizier/discussions
+    about: Questions about using or configuring Vizier, and early ideas that are not yet concrete requests. Issues are for reproducible bugs and well-formed feature requests.
+  - name: Read the docs first
+    url: https://github.com/treygoff24/vizier/blob/main/docs/README.md
+    about: Installing, modes and configuration, privacy, and troubleshooting (docs/troubleshooting.md covers the common problems).
+  - name: Support policy and how to report a bug well
+    url: https://github.com/treygoff24/vizier/blob/main/SUPPORT.md
+    about: What is in scope, where to ask, and the field list to use when filing with gh or the API.

@@ -1,0 +1,80 @@
+# The label set for Vizier's issues and pull requests.
+#
+# This file is data only. scripts/sync-labels.sh reads it and creates or updates each label with
+# `gh label create --force`. Nothing runs from it automatically, and the script never deletes a
+# label, so labels GitHub created by default (and any others) stay.
+#
+# Keep this exact layout (one block per label, three double-quoted string fields): the script
+# parses it with awk, not a YAML library. Descriptions are at most 100 characters (GitHub's limit).
+# Colors are six hex digits with no leading #.
+#
+# Who applies what: the issue forms add "bug" or "enhancement" plus "needs-triage". The maintainer
+# adds "agent-filed" when the report's disclosure field says an AI agent filed it, swaps
+# "needs-triage" for "needs-repro" when the steps do not reproduce, and adds the area labels.
+
+# Type
+- name: "bug"
+  color: "d73a4a"
+  description: "Something does not work as documented"
+- name: "enhancement"
+  color: "a2eeef"
+  description: "A new capability or a change to existing behavior"
+- name: "documentation"
+  color: "0075ca"
+  description: "Docs are missing, wrong or unclear"
+- name: "question"
+  color: "d876e3"
+  description: "A usage question; better asked in Discussions"
+- name: "dependencies"
+  color: "0366d6"
+  description: "Dependency or GitHub Actions update (Dependabot)"
+
+# Triage state
+- name: "needs-triage"
+  color: "fbca04"
+  description: "New; the maintainer has not looked at it yet"
+- name: "needs-repro"
+  color: "e99695"
+  description: "Cannot reproduce yet; waiting on better steps, logs or a different setup"
+- name: "agent-filed"
+  color: "5319e7"
+  description: "Filed by an AI agent on behalf of a user"
+- name: "duplicate"
+  color: "cfd3d7"
+  description: "Already reported or already fixed in another issue"
+- name: "wontfix"
+  color: "ffffff"
+  description: "Out of scope or not planned"
+
+# Contributing
+- name: "good first issue"
+  color: "7057ff"
+  description: "Small, well-scoped, and a good place to start"
+- name: "help wanted"
+  color: "008672"
+  description: "The maintainer would welcome a pull request"
+
+# Sensitive areas (these get extra care in review)
+- name: "privacy"
+  color: "b60205"
+  description: "Touches what is recorded, stored, logged or sent off the Mac"
+- name: "security"
+  color: "ee0701"
+  description: "Hardening or a non-sensitive security topic (vulnerabilities go to private reporting)"
+
+# Areas
+- name: "transcription-engines"
+  color: "1d76db"
+  description: "Apple speech, Scribe, Gemini, local Whisper, modes and fallbacks"
+- name: "hotkey-and-paste"
+  color: "c5def5"
+  description: "The hotkey, event tap, and pasting into other apps"
+- name: "permissions-and-setup"
+  color: "bfdadc"
+  description: "Setup guide, Microphone and Accessibility access, install and updates"
+- name: "ui"
+  color: "f9d0c4"
+  description: "The strip, popover, History window and Settings"
+- name: "build-and-release"
+  color: "c2e0c6"
+  description: "Building, signing, CI, the DMG and Sparkle updates"

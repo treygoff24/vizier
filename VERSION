@@ -1,0 +1,5 @@
+# Single source of the app version. build-app.sh injects these into the bundle's Info.plist.
+# MARKETING_VERSION is CFBundleShortVersionString; BUILD_NUMBER is CFBundleVersion and must only go up
+# (Sparkle compares it to decide what is newer).
+MARKETING_VERSION=0.1.0
+BUILD_NUMBER=1
