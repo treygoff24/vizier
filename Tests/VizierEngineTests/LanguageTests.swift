@@ -59,7 +59,11 @@ import Testing
         #expect(AppleSpeechModel.regional(Locale(identifier: "en-AU"), system: german).identifier(.bcp47) == "en-AU")
     }
 
-    @Test func appleResolvesBareEnglishToAmericanEnglish() async {
+    @Test func appleResolvesBareEnglishToAmericanEnglish() async throws {
+        // A Mac with no Apple speech support (GitHub's macOS runner) lists no English at all.
+        guard await AppleSpeechModel.supportedLocale(equivalentTo: Locale(identifier: "en-US")) != nil else {
+            try Test.cancel("Apple speech lists no en-US on this Mac, so locale resolution can't be exercised")
+        }
         // Apple's own lookup answers some other English for a bare "en" (en-ZA, en-IE in probes).
         let resolved = await AppleSpeechModel.supportedLocale(equivalentTo: Locale(identifier: "en"), system: Locale(identifier: "de-DE"))
         #expect(resolved?.identifier(.bcp47) == "en-US")
