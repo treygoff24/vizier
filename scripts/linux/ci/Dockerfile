@@ -19,10 +19,12 @@ SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
 # Verify the swiftly bootstrap as documented at swift.org/install/linux/swiftly/.
 # Pin swiftly as well as Swift; Debian 13 support is present in swiftly 1.2.0.
+# The keys are swift.org/keys/all-keys.asc, committed here: GitHub's runners are served
+# something else at that URL, which gpg cannot import.
+COPY --chown=vizier:vizier swift-keys.asc /home/vizier/swift-keys.asc
 RUN archive="swiftly-1.2.0-$(uname -m).tar.gz"; \
     curl --fail --location --retry 3 -o "$archive" "https://download.swift.org/swiftly/linux/$archive"; \
     curl --fail --location --retry 3 -o "$archive.sig" "https://download.swift.org/swiftly/linux/$archive.sig"; \
-    curl --fail --location --retry 3 -o swift-keys.asc https://www.swift.org/keys/all-keys.asc; \
     gpg --batch --import swift-keys.asc; \
     gpg --batch --verify "$archive.sig" "$archive"; \
     tar -xzf "$archive"; \
