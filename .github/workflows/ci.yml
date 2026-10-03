@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build-and-test:
-    # GitHub's public-preview macOS 27 arm64 image; Vizier targets macOS 27 (Package.swift).
+    # GitHub's public-preview macOS 27 arm64 image; Vizier targets macOS 26 or later (Package.swift).
     runs-on: xcode-27
     timeout-minutes: 45
     steps:

@@ -2,8 +2,8 @@
 
 ## What you need
 
-- macOS 27 or later on Apple Silicon.
-- Xcode 27 or later (Swift 6.2+). The package declares `swift-tools-version: 6.2` and `macOS 27`.
+- macOS 26 or later on Apple Silicon.
+- Xcode 26 or later (Swift 6.2+). The package declares `swift-tools-version: 6.2` and `macOS 26`.
 - Sparkle 2.10.0, which Swift Package Manager fetches.
 
 ## Build, test, run

@@ -1,6 +1,6 @@
 # Contributing
 
-Vizier is a native macOS app written in Swift. It needs macOS 27 or later on Apple Silicon, and Xcode 27 or later (Swift 6.2+) to build.
+Vizier is a native macOS app written in Swift. It needs macOS 26 or later on Apple Silicon, and Xcode 26 or later (Swift 6.2+) to build.
 
 ## Build and test
 

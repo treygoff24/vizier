@@ -1,18 +1,15 @@
 import AppKit
 import QuartzCore
 
-/// The menu bar status item. Clicking it opens the popover through macOS 27's expanded interface,
-/// which lets the item take part in menu bar keyboard navigation and menu tracking. Opening the
-/// popover clears the alert square; a take starting closes the popover.
-final class StatusItemController: NSObject, NSStatusItemExpandedInterfaceDelegate {
+/// The menu bar status item. Clicking it toggles the popover, which closes itself on a click
+/// outside. Opening the popover clears the alert square; a take starting closes the popover.
+final class StatusItemController: NSObject {
     enum Phase { case idle, arming, recording, finalizing }
 
     var phase: Phase = .idle { didSet { if phase != oldValue { phaseChanged() } } }
     var alert = false { didSet { if alert != oldValue { redraw() } } }
     /// Set once history and config exist; until then a click opens nothing.
-    var popover: PopoverController? {
-        didSet { popover?.onDismiss = { [weak self] in self?.item.expandedInterfaceSession?.cancel() } }
-    }
+    var popover: PopoverController?
 
     private let item = NSStatusBar.system.statusItem(withLength: StatusGlyph.size.width + 6)
     private var fold = 0.0
@@ -23,26 +20,25 @@ final class StatusItemController: NSObject, NSStatusItemExpandedInterfaceDelegat
 
     override init() {
         super.init()
-        item.expandedInterfaceDelegate = self
         item.button?.imagePosition = .imageOnly
+        item.button?.target = self
+        item.button?.action = #selector(clicked)
         appearanceObservation = item.button?.observe(\.effectiveAppearance) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.redraw() }
         }
         redraw()
     }
 
-    func statusItem(_ statusItem: NSStatusItem, didBegin expandedInterfaceSession: NSStatusItemExpandedInterfaceSession) {
+    @objc private func clicked() {
         let wasLit = alert
         alert = false
-        guard let popover, phase == .idle, let button = item.button, let window = button.window else {
-            expandedInterfaceSession.cancel()
+        guard let popover, phase == .idle, let button = item.button, let window = button.window else { return }
+        if popover.isShown {
+            popover.dismiss()
             return
         }
+        popover.anchorWindow = window
         popover.show(under: window.convertToScreen(button.convert(button.bounds, to: nil)), alertWasLit: wasLit)
-    }
-
-    func statusItemDidEndExpandedInterfaceSession(_ statusItem: NSStatusItem, animated: Bool) {
-        popover?.close()
     }
 
     private func phaseChanged() {

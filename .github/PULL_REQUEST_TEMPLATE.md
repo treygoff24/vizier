@@ -12,7 +12,7 @@ Fixes #
 
 ## Tests
 
-<!-- Run `swift test` on your Mac (macOS 27, Apple Silicon). Paste the exact command and the final line it prints, which reports the count. -->
+<!-- Run `swift test` on your Mac (macOS 26 or later, Apple Silicon). Paste the exact command and the final line it prints, which reports the count. -->
 
 - Command: `swift test`
 - Result (final line, with the test count):

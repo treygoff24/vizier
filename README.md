@@ -20,7 +20,7 @@ The default mode, Apple, runs entirely on your Mac and needs no account. Cloud m
 2. Open it and drag Vizier to Applications.
 3. Open Vizier and follow the setup guide.
 
-Requirements: macOS 27 or later on Apple Silicon. Vizier runs from the menu bar and has no Dock icon unless a window is open or you turn on Show in Dock.
+Requirements: macOS 26 or later on Apple Silicon. Vizier runs from the menu bar and has no Dock icon unless a window is open or you turn on Show in Dock.
 
 Setup itself is quick and needs no account, plus a one-time download of Apple's speech model whose time depends on your connection. It asks for Microphone access, Accessibility access (so Vizier can paste into other apps), Apple's speech model for your system language, your hotkey, an optional cloud key, and a practice take. Every step can be skipped and revisited later. The first time you run a copy from `/Applications` or `~/Applications`, Open at Login turns on; you can turn it off in Settings › General.
 
@@ -61,7 +61,7 @@ The common problems are a lost Accessibility grant, a missing Apple speech model
 
 ## Build from source
 
-You need macOS 27 or later on Apple Silicon, and Xcode 27 or later (Swift 6.2+).
+You need macOS 26 or later on Apple Silicon, and Xcode 26 or later (Swift 6.2+).
 
 ```bash
 swift build

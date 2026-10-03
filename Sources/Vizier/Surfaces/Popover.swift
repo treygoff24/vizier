@@ -134,9 +134,11 @@ final class PopoverController: NSObject, NSWindowDelegate {
     /// Runs Sparkle's check; `canCheckForUpdates` is asked each time the popover opens.
     var checkForUpdates: () -> Void = {}
     var canCheckForUpdates: () -> Bool = { false }
-    /// Called when the popover closes itself (a click outside, a door); the status item ends its
-    /// expanded-interface session in response.
+    /// Called when the popover closes itself (a click outside, a door).
     var onDismiss: () -> Void = {}
+    /// The window that opened the popover (the status item's). A click there is not a click outside:
+    /// the opener's own action decides, so a click on the item toggles instead of closing and reopening.
+    weak var anchorWindow: NSWindow?
 
     private var panel: PopoverPanel?
     private var anchor: NSRect = .zero
@@ -235,7 +237,7 @@ final class PopoverController: NSObject, NSWindowDelegate {
                 if event.keyCode == 53, event.window === panel { self.dismiss(); return nil }
                 return event
             }
-            if event.window !== panel { self.dismiss() }
+            if event.window !== panel, event.window !== self.anchorWindow { self.dismiss() }
             return event
         }) { monitors.append(local) }
     }

@@ -21,13 +21,13 @@ Search [existing issues](https://github.com/treygoff24/vizier/issues?q=is%3Aissu
 
 Supported:
 
-- The latest released version, on macOS 27 or later, on Apple Silicon.
+- The latest released version, on macOS 26 or later, on Apple Silicon.
 - The Apple (on-device), Scribe and Gemini modes, and edits to `vizier.jsonc`, `vocabulary.txt` and `replacements.txt` as documented.
 - Builds you make from `main` with `scripts/build-app.sh`, with the caveat that ad-hoc-signed builds lose the Accessibility grant on every rebuild (see troubleshooting).
 
 Not supported, so reports will be closed with a pointer:
 
-- Intel Macs, macOS 26 or earlier, iOS, Windows or Linux.
+- Intel Macs, macOS 15 or earlier, iOS, Windows or Linux.
 - The local Whisper and local cleanup engines. They are experimental and unsupported; a fix is welcome as a pull request.
 - Help with a provider's account, billing, quota or API keys (ElevenLabs, Google). Vizier can show you its own error; the provider's side is theirs.
 - Recognition accuracy that comes from Apple's or a provider's model rather than from Vizier. Try another mode, or add words to `vocabulary.txt` or `replacements.txt`.

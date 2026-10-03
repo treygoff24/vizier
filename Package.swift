@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Vizier",
-    platforms: [.macOS("27.0")],
+    platforms: [.macOS("26.0")],
     products: [
         .library(name: "VizierEngine", targets: ["VizierEngine"]),
         .executable(name: "Vizier", targets: ["Vizier"]),
