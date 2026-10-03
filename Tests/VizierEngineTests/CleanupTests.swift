@@ -63,7 +63,7 @@ import Testing
         var noThinking = config
         noThinking.thinkingLevel = nil
         let body = try json(GeminiCleanup.requestBody(transcript: "zorblex", config: noThinking))
-        #expect(body.value(forKeyPath: "generationConfig") as? NSDictionary == ["maxOutputTokens": 515])
+        #expect(body.value(forKey: "generationConfig") as? NSDictionary == ["maxOutputTokens": 515])
     }
 
     @Test func theEndpointNamesTheModelAndTheMethod() {

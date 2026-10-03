@@ -1,4 +1,6 @@
+#if canImport(AVFoundation)
 import AVFoundation
+#endif
 import Foundation
 import Testing
 @testable import VizierEngine
@@ -83,6 +85,7 @@ import Testing
         #expect([Float]().withUnsafeBufferPointer { Waveform.bars($0, count: 3) } == [0, 0, 0])
     }
 
+    #if canImport(AVFoundation)  // Linux has no FLAC decoder (plan D7), so the file-reading waveform is macOS-only
     @Test func waveformReadsATakesFLAC() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: "vizier-tests-\(UUID().uuidString)")
         let store = TakeStore(root: root)
@@ -102,4 +105,5 @@ import Testing
         #expect(bars[0..<30].allSatisfy { $0 > 0.9 })
         #expect(bars[34..<64].allSatisfy { $0 == 0 })
     }
+    #endif
 }

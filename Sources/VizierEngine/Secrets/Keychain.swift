@@ -1,3 +1,4 @@
+#if canImport(Security)
 import Foundation
 import Security
 
@@ -59,3 +60,4 @@ public enum Keychain {
         }
     }
 }
+#endif

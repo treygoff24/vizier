@@ -1,6 +1,13 @@
+#if canImport(AVFoundation)
 import AVFoundation
+#endif
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(os)
 import os
+#endif
 
 /// Transcribes a saved take in one request. The fallback when the live stream fails.
 public protocol BatchTranscriber: Sendable {
@@ -311,8 +318,12 @@ public struct GeminiBatchTranscriber: BatchTranscriber {
     /// The audio's length from its header, or nil when the header can't be read. An unreadable
     /// header doesn't stop the take: the API is the judge of a file it can't parse either.
     static func duration(of audio: URL) -> Double? {
+        #if canImport(AVFoundation)
         guard let file = try? AVAudioFile(forReading: audio), file.fileFormat.sampleRate > 0 else { return nil }
         return Double(file.length) / file.fileFormat.sampleRate
+        #else
+        TakeStore.duration(of: audio)
+        #endif
     }
 }
 

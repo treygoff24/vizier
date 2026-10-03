@@ -1,4 +1,3 @@
-import AVFoundation
 import Foundation
 import Synchronization
 
@@ -7,8 +6,8 @@ import Synchronization
 public final class TakeRecorder: @unchecked Sendable {
     public struct Summary: Sendable {
         public var frames: Int64
-        public var capture: HALCapture.Stats
-        /// Set when a write to the recording file failed. Earlier audio is still on disk.
+        public var capture: CaptureStats
+        /// Set when a write to the recording file, or closing it, failed. Earlier audio is still on disk.
         public var writeError: String?
         public var seconds: Double { Double(frames) / 16_000 }
     }
@@ -16,16 +15,33 @@ public final class TakeRecorder: @unchecked Sendable {
     /// 100 ms of 16 kHz 16-bit mono.
     public static let chunkBytes = 3_200
 
-    public let capture = HALCapture()
+    public let capture: any AudioCapture
     private let framesCaptured = Atomic<Int64>(0)
 
-    // Touched on the capture's processing queue while running, and by start/stop otherwise.
-    private var file: AVAudioFile?
+    // Touched on the capture's delivery context while running, and by start/stop otherwise.
+    private var file: (any RecordingFile)?
     private var pending = Data()
     private var onChunk: (@Sendable (Data) -> Void)?
     private var writeError: String?
 
-    public init() {}
+    private let recordingFactory: @Sendable (TakeFiles) throws -> any RecordingFile
+
+    public init(capture: any AudioCapture) {
+        self.capture = capture
+        recordingFactory = { try TakeStore.createRecordingFile($0) }
+    }
+
+    /// For tests: a recording file the test controls.
+    init(capture: any AudioCapture, recordingFactory: @escaping @Sendable (TakeFiles) throws -> any RecordingFile) {
+        self.capture = capture
+        self.recordingFactory = recordingFactory
+    }
+
+    #if canImport(AudioToolbox)
+    public convenience init() {
+        self.init(capture: HALAudioCapture())
+    }
+    #endif
 
     /// Captured audio so far, in seconds. This is the strip's timer: time captured, not time elapsed.
     public var capturedSeconds: Double { Double(framesCaptured.load(ordering: .relaxed)) / 16_000 }
@@ -39,41 +55,43 @@ public final class TakeRecorder: @unchecked Sendable {
     public func start(
         _ take: TakeFiles,
         onChunk: @escaping @Sendable (Data) -> Void,
-        onEvent: @escaping @Sendable (HALCapture.Event) -> Void
+        onEvent: @escaping @Sendable (CaptureEvent) -> Void
     ) throws {
-        file = try TakeStore.createRecording(take)
+        file = try recordingFactory(take)
         pending = Data()
         pending.reserveCapacity(Self.chunkBytes * 2)
         writeError = nil
         framesCaptured.store(0, ordering: .relaxed)
         self.onChunk = onChunk
         do {
-            try capture.start(sink: { [unowned self] buffer in self.receive(buffer) }, onEvent: onEvent)
+            try capture.start(sink: { [unowned self] samples in self.receive(samples) }, onEvent: onEvent)
         } catch {
-            file?.close()
+            try? file?.close()
             file = nil
             throw error
         }
     }
 
-    /// Stops capture, delivers the last partial chunk, and closes the recording file.
+    /// Stops capture, delivers the last partial chunk, and closes the recording file. A failure to
+    /// close lands in `Summary.writeError`; the recording stays on disk either way.
     public func stop() -> Summary {
         let stats = capture.stop()
         if !pending.isEmpty { onChunk?(pending) }
         pending = Data()
-        file?.close()
+        do { try file?.close() } catch {
+            if writeError == nil { writeError = "closing the recording failed: \(error)" }
+        }
         file = nil
         onChunk = nil
         return Summary(frames: framesCaptured.load(ordering: .relaxed), capture: stats, writeError: writeError)
     }
 
-    private func receive(_ buffer: AVAudioPCMBuffer) {
+    private func receive(_ samples: UnsafeBufferPointer<Int16>) {
         if let file, writeError == nil {
-            do { try file.write(from: buffer) } catch { writeError = String(describing: error) }
+            do { try file.append(samples) } catch { writeError = String(describing: error) }
         }
-        framesCaptured.wrappingAdd(Int64(buffer.frameLength), ordering: .relaxed)
-        guard let samples = buffer.int16ChannelData?[0] else { return }
-        pending.append(UnsafeBufferPointer(start: samples, count: Int(buffer.frameLength)))
+        framesCaptured.wrappingAdd(Int64(samples.count), ordering: .relaxed)
+        pending.append(samples)
         while pending.count >= Self.chunkBytes {
             onChunk?(Data(pending.prefix(Self.chunkBytes)))
             pending.removeFirst(Self.chunkBytes)

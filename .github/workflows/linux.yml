@@ -1,0 +1,43 @@
+name: Linux CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # Cache the expensive toolchain/dependency image, not a host Swift .build.
+      # ci.sh still builds it, allowing Docker to reuse the restored layers.
+      - name: Cache Linux CI image
+        id: image-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/vizier-linux-ci.tar.gz
+          key: linux-ci-debian13-swift640-${{ runner.arch }}-${{ hashFiles('scripts/linux/ci/**') }}
+
+      - name: Load cached image
+        if: steps.image-cache.outputs.cache-hit == 'true'
+        run: docker load --input .cache/vizier-linux-ci.tar.gz
+
+      - name: Build and test in Debian 13
+        run: scripts/linux/ci.sh
+
+      - name: Save Linux CI image
+        if: steps.image-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p .cache
+          docker save vizier-linux-ci:swift-6.4.0 | gzip -1 > .cache/vizier-linux-ci.tar.gz

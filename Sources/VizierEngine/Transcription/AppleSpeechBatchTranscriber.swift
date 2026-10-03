@@ -1,3 +1,4 @@
+#if canImport(Speech)
 import AVFoundation
 import Foundation
 import Speech
@@ -117,3 +118,4 @@ public struct AppleSpeechBatchTranscriber: BatchTranscriber {
         }
     }
 }
+#endif

@@ -1,5 +1,7 @@
 # Installing Vizier
 
+This page is for the Mac app. For Linux, see [Vizier on Linux](linux.md).
+
 ## Requirements
 
 - macOS 27 or later on Apple Silicon.

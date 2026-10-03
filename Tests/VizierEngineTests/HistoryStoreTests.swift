@@ -1,5 +1,13 @@
 import Foundation
+#if canImport(SQLite3)
+#if canImport(SQLite3)
 import SQLite3
+#elseif canImport(CSQLite)
+import CSQLite
+#endif
+#elseif canImport(CSQLite)
+import CSQLite
+#endif
 import Testing
 @testable import VizierEngine
 
@@ -404,6 +412,17 @@ private final class RawDatabase {
                 == ["cleaned-only", "raw-only"])
     }
 
+    @Test func historyCursorPagesEqualMillisecondsWithoutSkipping() throws {
+        let history = try open()
+        for id in ["a", "b", "c"] { try history.begin(draft(id, Date(timeIntervalSince1970: 2000))) }
+        #expect(try history.search("", outcomes: nil, limit: 1, before: nil).map(\.id) == ["c"])
+        #expect(try history.search("", outcomes: nil, limit: 1, before: nil, cursor: "2000000:c").map(\.id) == ["b"])
+        #expect(try history.search("", outcomes: nil, limit: 1, before: nil, cursor: "2000000:b").map(\.id) == ["a"])
+        #expect(try history.search("", outcomes: nil, limit: 1, before: nil, cursor: "2000000:a").isEmpty)
+        #expect(try history.search("", outcomes: nil, limit: 10, before: Date(timeIntervalSince1970: 2000)).isEmpty)
+        #expect(throws: HistoryError.self) { try history.search("", outcomes: nil, limit: 10, before: nil, cursor: "bad") }
+    }
+
     @Test func searchNeedsEveryWordInAnyOrder() throws {
         let history = try open()
         func add(_ id: String, _ seconds: Double, _ stage: TakeStages) throws {
@@ -507,7 +526,10 @@ private final class RawDatabase {
         try await counter.reach(3)
         try history.reconcileFiles()
         try await counter.reach(4)
+        #if canImport(AppKit)
+        // Only the app has a UI thread to announce on; elsewhere the announcements still never run inside the write.
         #expect(counter.offMain == 0)
+        #endif
     }
 
     // MARK: 7–8. Schema and durability

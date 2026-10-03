@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// The cleanup pass as one `generateContent` call to a small Gemini text model. The wire format
 /// (camelCase, `thinkingConfig.thinkingLevel`) matches the calls measured

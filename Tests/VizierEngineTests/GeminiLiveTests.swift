@@ -30,7 +30,7 @@ import Testing
         let wire = try json(GeminiLive.encode(.setup(setup)))
         let body = try #require(wire["setup"] as? NSDictionary)
         #expect(body["model"] as? String == "models/m")
-        #expect(body.value(forKeyPath: "inputAudioTranscription") as? NSDictionary == ["mode": "SMART"])
+        #expect(body.value(forKey: "inputAudioTranscription") as? NSDictionary == ["mode": "SMART"])
     }
 
     @Test func audioIsBase64PCMAtSixteenKilohertz() throws {

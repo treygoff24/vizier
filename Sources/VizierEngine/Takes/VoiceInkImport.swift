@@ -1,3 +1,4 @@
+#if canImport(Darwin)
 import Darwin
 import Foundation
 import SQLite3
@@ -238,3 +239,4 @@ public enum VoiceInkImport {
         return summary
     }
 }
+#endif

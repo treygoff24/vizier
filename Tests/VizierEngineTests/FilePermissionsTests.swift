@@ -1,5 +1,11 @@
+#if canImport(AVFoundation)
 import AVFoundation
+#endif
+#if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Foundation
 import Testing
 @testable import VizierEngine
@@ -62,17 +68,33 @@ import Testing
         for suffix in ["", "-wal", "-shm"] { #expect(try mode(URL(filePath: database.path + suffix)) == 0o600, "history.sqlite\(suffix)") }
     }
 
+    @Test func takeFoldersArePrivate() throws {
+        let takes = TakeStore(root: root.appending(path: "Takes"))
+        let take = try takes.files(forID: "2026-09-20T15-00-00.000Z")
+        #expect(try mode(takes.root) == 0o700)
+        #expect(try mode(take.directory) == 0o700)
+    }
+
     @Test func takeFoldersRecordingsAndFLACsArePrivate() throws {
         let takes = TakeStore(root: root.appending(path: "Takes"))
         let take = try takes.files(forID: "2026-09-20T15-00-00.000Z")
         #expect(try mode(takes.root) == 0o700)
         #expect(try mode(take.directory) == 0o700)
+        #if canImport(AVFoundation)
         let file = try TakeStore.createRecording(take)
         #expect(try mode(take.recording) == 0o600)
         let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 8_000)!
         buffer.frameLength = 8_000
         try file.write(from: buffer)
         file.close()
+        #else
+        let file = try TakeStore.createRecordingFile(take)
+        #expect(try mode(take.recording) == 0o600, "private before the first sample")
+        let silence = [Int16](repeating: 0, count: 8_000)
+        try silence.withUnsafeBufferPointer { try file.append($0) }
+        try file.close()
+        #expect(try mode(take.recording) == 0o600, "and after the header is patched")
+        #endif
         try takes.finishAudio(take)
         #expect(try mode(take.flac) == 0o600)
     }

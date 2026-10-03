@@ -1,3 +1,4 @@
+#if canImport(Speech)
 import AVFoundation
 import Foundation
 import Speech
@@ -260,3 +261,4 @@ extension TranscriberError {
         }
     }
 }
+#endif

@@ -1,4 +1,8 @@
+#if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Foundation
 
 /// Vizier's data and settings folders hold dictations, audio, vocabulary, and replacements, so they

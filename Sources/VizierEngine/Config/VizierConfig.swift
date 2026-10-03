@@ -24,10 +24,18 @@ public struct VizierConfig: Sendable, Equatable {
         public var mode: String
         public var modes: [Mode]
 
+        #if canImport(Speech)
         public init(mode: String = Mode.apple.id, modes: [Mode] = [.apple, .scribe, .geminiClean, .geminiSmart]) {
             self.mode = mode
             self.modes = modes
         }
+        #else
+        /// Apple's speech engines do not exist on Linux, so the local Whisper mode is the default.
+        public init(mode: String = Mode.local.id, modes: [Mode] = [.local, .scribe, .geminiClean, .geminiSmart]) {
+            self.mode = mode
+            self.modes = modes
+        }
+        #endif
     }
 
     public struct Mode: Codable, Sendable, Equatable {
@@ -69,7 +77,7 @@ public struct VizierConfig: Sendable, Equatable {
         /// default. No language-model cleanup (it dropped real words in testing); the filler rule
         /// takes out "um", "uh", and comma-set-off "you know", "I mean", and "like". The batch link
         /// answers when the live stream fails.
-        public static var apple: Mode { apple(locale: AppleSpeechModel.preferredLocale()) }
+        public static var apple: Mode { apple(locale: SystemLocale.preferred()) }
 
         public static func apple(locale: Locale) -> Mode {
             Mode(
@@ -83,9 +91,35 @@ public struct VizierConfig: Sendable, Equatable {
         /// The offline last resort of the cloud modes: Apple's on-device recognizer on the saved audio.
         public static let appleOffline = Fallback(engine: "apple-speech-batch", model: "speech-transcriber", mode: "general")
 
+        /// The offline last resort of the built-in cloud modes: Apple's recognizer on macOS, local Whisper on Linux.
+        static var builtInOfflineFallback: Fallback? {
+            #if canImport(Speech)
+            appleOffline
+            #else
+            localOffline
+            #endif
+        }
+
+        #if !canImport(Speech)
+        /// The offline last resort of the cloud modes on Linux: local Whisper on the saved audio.
+        static let localOffline = Fallback(engine: "local-whisper", model: "large-v3-turbo", mode: "verbatim")
+        #endif
+
         /// The language the built-in modes listen for: the system's, as the Apple mode has it. The
         /// cloud modes' offline fallback reads it too, so it uses the model onboarding downloaded.
-        static var systemLanguage: String { AppleSpeechModel.preferredLocale().identifier }
+        static var systemLanguage: String { SystemLocale.preferred().identifier }
+
+        /// `[systemLanguage]`, or no language at all when the system names none (a C or POSIX locale on
+        /// Linux): the cloud engines then detect the language themselves.
+        static var systemLanguages: [String] { languages(forSystem: systemLanguage) }
+
+        static func languages(forSystem identifier: String) -> [String] {
+            #if canImport(Speech)
+            [identifier]
+            #else
+            identifier.isEmpty ? [] : [identifier]
+            #endif
+        }
 
         /// Better accuracy than the Gemini live modes: across 34 test takes Scribe changed the
         /// meaning of about 9 where Gemini Live changed about 14, and its final came a median
@@ -95,35 +129,49 @@ public struct VizierConfig: Sendable, Equatable {
         public static var scribe: Mode { Mode(
             id: "scribe",
             name: "Scribe",
-            transcriber: Transcriber(engine: "elevenlabs-scribe-realtime", model: "scribe_v2_realtime", mode: "verbatim", languages: [systemLanguage], finalTimeoutMs: 4_000),
+            transcriber: Transcriber(engine: "elevenlabs-scribe-realtime", model: "scribe_v2_realtime", mode: "verbatim", languages: systemLanguages, finalTimeoutMs: 4_000),
             fallback: Fallback(engine: "gemini-batch", model: "gemini-3.5-transcribe", mode: "verbatim"),
             removeFillers: true,
-            offlineFallback: appleOffline) }
+            offlineFallback: builtInOfflineFallback) }
 
         /// VERBATIM kept every word on nine hard takes where SMART dropped content from four, and
         /// Flash-Lite cleans it for about 0.8 s more. It was the default mode before Scribe.
         public static var geminiClean: Mode { Mode(
             id: "gemini-clean",
             name: "Gemini Clean",
-            transcriber: Transcriber(engine: "gemini-live", model: "gemini-3.5-transcribe-live", mode: "VERBATIM", languages: [systemLanguage], finalTimeoutMs: 5_000),
+            transcriber: Transcriber(engine: "gemini-live", model: "gemini-3.5-transcribe-live", mode: "VERBATIM", languages: systemLanguages, finalTimeoutMs: 5_000),
             fallback: Fallback(engine: "gemini-batch", model: "gemini-3.5-transcribe", mode: "verbatim"),
             cleanup: Cleanup(engine: "gemini-generate", model: "gemini-3.5-flash-lite", thinkingLevel: "MINIMAL", timeoutMs: 4_000),
-            offlineFallback: appleOffline) }
+            offlineFallback: builtInOfflineFallback) }
 
         public static var geminiSmart: Mode { Mode(
             id: "gemini-smart",
             name: "Gemini SMART",
-            transcriber: Transcriber(engine: "gemini-live", model: "gemini-3.5-transcribe-live", mode: "SMART", languages: [systemLanguage], finalTimeoutMs: 5_000),
+            transcriber: Transcriber(engine: "gemini-live", model: "gemini-3.5-transcribe-live", mode: "SMART", languages: systemLanguages, finalTimeoutMs: 5_000),
             fallback: Fallback(engine: "gemini-batch", model: "gemini-3.5-transcribe", mode: "smart"),
-            offlineFallback: appleOffline) }
+            offlineFallback: builtInOfflineFallback) }
 
         /// Whisper large-v3-turbo on this Mac, then the filler filter: nothing leaves the machine.
         /// In a dictation benchmark it ranked as the best local engine.
+        #if canImport(Speech)
         public static let local = Mode(
             id: "local",
             name: "Local",
             transcriber: Transcriber(engine: "local-whisper", model: "large-v3-turbo", mode: "verbatim", languages: ["en"], finalTimeoutMs: 4_000),
             removeFillers: true)
+        #else
+        /// On Linux the default mode listens in the system's language rather than English, and the
+        /// English filler rules stay off when the system names no language.
+        public static var local: Mode { local(languages: systemLanguages) }
+
+        static func local(languages: [String]) -> Mode {
+            Mode(
+                id: "local",
+                name: "Local",
+                transcriber: Transcriber(engine: "local-whisper", model: "large-v3-turbo", mode: "verbatim", languages: languages, finalTimeoutMs: 4_000),
+                removeFillers: !languages.isEmpty)
+        }
+        #endif
     }
 
     public struct Transcriber: Codable, Sendable, Equatable {
@@ -240,7 +288,7 @@ public final class ConfigStore: @unchecked Sendable {
         self.directory = directory
     }
 
-    public static let standard = ConfigStore(directory: FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/vizier"))
+    public static let standard = ConfigStore(directory: VizierPaths.config)
 
     public var settingsURL: URL { directory.appending(path: "vizier.jsonc") }
     public var vocabularyURL: URL { directory.appending(path: "vocabulary.txt") }
@@ -331,6 +379,10 @@ public final class ConfigStore: @unchecked Sendable {
             guard onDisk == expected.bytes else { throw ModeWriteError.changedOnDisk }
             // Foundation's atomic replace keeps the file's 0600 mode (FilePermissionsTests checks it).
             do { try bytes.write(to: settingsURL, options: .atomic) } catch { throw ModeWriteError.io(String(describing: error)) }
+            #if !canImport(Darwin)
+            // Linux's atomic replace writes a temp file with the default mode (0644) and renames it over; Darwin keeps 0600.
+            PrivateFiles.tighten(settingsURL)
+            #endif
             return SettingsSnapshot(bytes: bytes, settings: settings)
         }
     }
@@ -361,6 +413,16 @@ public final class ConfigStore: @unchecked Sendable {
             throw .settings("\"mode\" names \"\(settings.mode)\", which no entry in \"modes\" has as its id")
         }
         for mode in settings.modes {
+            #if !canImport(Speech)
+            // Apple's speech engines exist only on macOS.
+            let appleLinks = [("transcriber engine", mode.transcriber.engine), ("fallback engine", mode.fallback?.engine),
+                              ("offline_fallback engine", mode.offlineFallback?.engine)]
+            for (what, engine) in appleLinks {
+                if let engine, appleEngines.contains(engine) {
+                    throw .settings("mode \"\(mode.id)\" names \(what) \"\(engine)\"; Apple's speech engines are not available on Linux, so pick another engine")
+                }
+            }
+            #endif
             guard mode.transcriber.finalTimeoutMs > 0 else {
                 throw .settings("mode \"\(mode.id)\" has a final_timeout_ms of \(mode.transcriber.finalTimeoutMs)")
             }
@@ -439,9 +501,96 @@ public final class ConfigStore: @unchecked Sendable {
 
     /// The starter `vizier.jsonc`, with every mode in the system language. The cloud modes'
     /// offline fallback reads their language, so it matches the Apple model onboarding downloads.
-    static var starterSettings: String { starterSettings(language: AppleSpeechModel.preferredLocale().identifier) }
+    static var starterSettings: String { starterSettings(language: SystemLocale.preferred().identifier) }
 
     static func starterSettings(language: String) -> String {
+        #if !canImport(Speech)
+        return linuxStarterSettings(language: language)
+        #else
+        return macStarterSettings(language: language)
+        #endif
+    }
+
+    #if !canImport(Speech)
+    /// The starter file on Linux: the same cloud modes, with the local Whisper mode as the default
+    /// and no Apple engines.
+    static func linuxStarterSettings(language: String) -> String {
+        // No language (a C or POSIX locale): the cloud engines detect it and the English filler rules stay off.
+        let languages = language.isEmpty ? "[]" : "[\"\(language)\"]"
+        return """
+        // Vizier config. Edit it by hand; it is read on every take.
+        // JSON with comments. Vocabulary and word replacements live beside it in vocabulary.txt and
+        // replacements.txt. A broken file is reported and the last good config keeps running.
+        {
+          // The mode every take runs through.
+          "mode": "local",
+          "modes": [
+            {
+              // Whisper on this machine (a local whisper-server): nothing leaves the machine.
+              "id": "local",
+              "name": "Local",
+              "transcriber": {
+                "engine": "local-whisper",
+                "model": "large-v3-turbo",
+                "mode": "verbatim",
+                "languages": \(languages),
+                "final_timeout_ms": 4000,
+              },
+              "remove_fillers": \(language.isEmpty ? "false" : "true"),
+            },
+            {
+              // Fast and accurate; needs an ElevenLabs key.
+              "id": "scribe",
+              "name": "Scribe",
+              "transcriber": {
+                "engine": "elevenlabs-scribe-realtime",
+                "model": "scribe_v2_realtime",
+                "mode": "verbatim",
+                "languages": \(languages),
+                "final_timeout_ms": 4000,
+              },
+              "fallback": { "engine": "gemini-batch", "model": "gemini-3.5-transcribe", "mode": "verbatim" },
+              "offline_fallback": { "engine": "local-whisper", "model": "large-v3-turbo", "mode": "verbatim" },
+              "remove_fillers": true,
+            },
+            {
+              // Gemini live, then a Flash-Lite cleanup pass; needs a Gemini key.
+              "id": "gemini-clean",
+              "name": "Gemini Clean",
+              "transcriber": {
+                "engine": "gemini-live",
+                "model": "gemini-3.5-transcribe-live",
+                "mode": "VERBATIM",
+                "languages": \(languages),
+                "final_timeout_ms": 5000,
+              },
+              "fallback": { "engine": "gemini-batch", "model": "gemini-3.5-transcribe", "mode": "verbatim" },
+              "offline_fallback": { "engine": "local-whisper", "model": "large-v3-turbo", "mode": "verbatim" },
+              // Cleans whichever transcript arrives. Past timeout_ms, or on a failure, the raw text pastes.
+              "cleanup": { "engine": "gemini-generate", "model": "gemini-3.5-flash-lite", "thinking_level": "MINIMAL", "timeout_ms": 4000 },
+            },
+            {
+              "id": "gemini-smart",
+              "name": "Gemini SMART",
+              "transcriber": {
+                "engine": "gemini-live",
+                "model": "gemini-3.5-transcribe-live",
+                "mode": "SMART",
+                "languages": \(languages),
+                "final_timeout_ms": 5000,
+              },
+              "fallback": { "engine": "gemini-batch", "model": "gemini-3.5-transcribe", "mode": "smart" },
+              "offline_fallback": { "engine": "local-whisper", "model": "large-v3-turbo", "mode": "verbatim" },
+            },
+          ],
+        }
+
+        """
+    }
+    #endif
+
+    #if canImport(Speech)
+    static func macStarterSettings(language: String) -> String {
         """
         // Vizier config. The settings window edits this file, and you can edit it by hand; it is read on every take.
         // JSON with comments. Vocabulary and word replacements live beside it in vocabulary.txt and
@@ -525,4 +674,5 @@ public final class ConfigStore: @unchecked Sendable {
 
         """
     }
+    #endif
 }

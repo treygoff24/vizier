@@ -10,6 +10,8 @@ swift test                 # Swift Testing; the final line reports the test coun
 scripts/build-app.sh       # builds build/Vizier.app (gitignored); does not install or launch it
 ```
 
+On Linux the package builds the `vizier` daemon and CLI (`swift build -c release --product vizier`) and the `VizierEngineTests` and `VizierCLITests` targets; `scripts/linux/ci.sh` runs them in a Docker container. The macOS app and `VizierTests` build only on a Mac, and Linux checks run only on Linux, so a change to shared engine code needs both.
+
 Run the tests for what you changed, then the full suite before you finish.
 `scripts/install.sh` replaces the installed app and relaunches it. See the reinstall rule below.
 
@@ -25,6 +27,8 @@ Run the tests for what you changed, then the full suite before you finish.
 ## Layout
 
 - `Sources/VizierEngine`: the engine library (capture, transcription, cleanup, config, paste, history).
-- `Sources/Vizier`: the menu-bar app (AppKit and SwiftUI).
+- `Sources/Vizier`: the menu-bar app (AppKit and SwiftUI), macOS only.
+- `Sources/VizierCLI`, `Sources/vizier-linux`: the Linux daemon and `vizier` command.
+- The take state machine is `TakeSession` in `Sources/VizierEngine/Session`; both front ends supply adapters.
 - `Tests/`: unit tests. `Resources/`: Info.plist, entitlements, bundled font and sounds.
 - `DESIGN.md` is the visual design system. `NOTICE` lists third-party code; leave the VoiceInk attribution headers as they are.

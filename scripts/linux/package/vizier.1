@@ -1,0 +1,57 @@
+.TH VIZIER 1 "October 2026" "Vizier" "User Commands"
+.SH NAME
+vizier \- Linux dictation daemon and command-line client
+.SH SYNOPSIS
+.B vizier
+.I command
+.RI [ options ]
+.SH DESCRIPTION
+Vizier records a take and transcribes it with local Whisper or optional cloud
+engines. The daemon owns recording and delivery; clients use a private Unix socket.
+.SH COMMANDS
+.TP
+.B daemon
+Run the daemon in the foreground.
+.TP
+.B setup [\-\-no-portal] [\-\-autostart]
+Probe desktop helpers, write starter configuration, and install a user service.
+.TP
+.B toggle
+Start or stop a take.
+.TP
+.B cancel
+Cancel the current take.
+.TP
+.B status
+Show daemon and take state.
+.TP
+.B doctor
+Report runtime and engine prerequisites. Missing prerequisites return exit 5.
+.TP
+.B last
+Print the latest completed take's text.
+.TP
+.B history [\-\-limit N] [\-\-text]
+List recent takes. Text is included only when requested.
+.TP
+.B config path|get|set mode MODE
+Show configuration path or settings, or choose a configured mode.
+.TP
+.B key set NAME \-\-stdin
+Read an optional provider key from standard input.
+.TP
+.B \-\-version
+Print binary and protocol versions.
+.SH OPTIONS
+.B \-\-json
+returns a versioned JSON envelope.
+.B \-\-help
+prints command-specific help.
+.SH FILES
+Configuration: $XDG_CONFIG_HOME/vizier (default ~/.config/vizier).
+History and takes: $XDG_DATA_HOME/vizier (default ~/.local/share/vizier).
+Socket: $XDG_RUNTIME_DIR/vizier/vizier.sock.
+.SH NOTES
+Live cloud engines need libcurl 8.11 or later. Batch engines remain available
+with older compatible curl versions. Desktop delivery needs a supported clipboard
+and paste route; on a headless system the transcript remains in history.

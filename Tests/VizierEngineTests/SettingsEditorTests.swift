@@ -10,7 +10,7 @@ import Testing
     @Test func theStarterFileChangesOnlyTheModeValue() throws {
         let before = ConfigStore.starterSettings
         let after = try edit(before)
-        #expect(after == before.replacingOccurrences(of: "\"mode\": \"apple\",\n  \"modes\"", with: "\"mode\": \"gemini-clean\",\n  \"modes\""))
+        #expect(after == before.replacingOccurrences(of: "\"mode\": \"\(VizierConfig.Settings().mode)\",\n  \"modes\"", with: "\"mode\": \"gemini-clean\",\n  \"modes\""))
         #expect(after.contains("// The mode every take runs through."))
         #expect(after.contains("\"mode\": \"verbatim\","), "nested transcriber modes stay")
         #expect(after.contains("\"mode\": \"VERBATIM\","))

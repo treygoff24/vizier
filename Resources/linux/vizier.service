@@ -1,0 +1,16 @@
+[Unit]
+Description=Vizier dictation daemon
+Documentation=man:vizier(1)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=@VIZIER_BIN@ daemon
+Restart=on-failure
+RestartSec=2
+# The daemon finishes an active take's audio on SIGTERM (5 s deadline); stay above that.
+TimeoutStopSec=15
+
+[Install]
+WantedBy=graphical-session.target

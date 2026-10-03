@@ -1,4 +1,7 @@
+#if canImport(AVFoundation)
 import AVFoundation
+#endif
+import Foundation
 
 /// The History waveform: a take's audio reduced to a fixed number of bars, each the loudness (RMS)
 /// of its slice scaled against the loudest slice, so a quiet mic still shows the shape of speech.
@@ -7,6 +10,7 @@ public enum Waveform {
     /// About -50 dBFS. Below this everywhere, the take is treated as silence.
     public static let silenceFloor: Float = 0.003
 
+    #if canImport(AVFoundation)
     /// Reads the whole file off the main thread's hands: call it from a background task.
     public static func bars(of url: URL, count: Int = 64) throws -> [Float] {
         let file = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
@@ -19,6 +23,7 @@ public enum Waveform {
         guard let channel = buffer.floatChannelData?[0] else { return Array(repeating: 0, count: count) }
         return bars(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)), count: count)
     }
+    #endif
 
     public static func bars(_ samples: UnsafeBufferPointer<Float>, count: Int) -> [Float] {
         guard count > 0 else { return [] }

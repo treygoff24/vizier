@@ -1,5 +1,10 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(Network)
 import Network
+#endif
 import Testing
 @testable import VizierEngine
 
@@ -33,7 +38,7 @@ import Testing
     @Test func emptyListsAreLeftOutButTheModeNeverIs() throws {
         let bare = GeminiBatch.Config(model: "m", mode: "smart", languages: [], vocabulary: [])
         let body = try json(GeminiBatch.requestBody(audio: Data(), mimeType: "audio/flac", config: bare))
-        #expect(body.value(forKeyPath: "generation_config.transcription_config") as? NSDictionary == ["mode": "smart"])
+        #expect((body.value(forKey: "generation_config") as? NSDictionary)?.value(forKey: "transcription_config") as? NSDictionary == ["mode": "smart"])
     }
 
     @Test func readsTheTextOfModelOutputSteps() throws {
@@ -124,6 +129,7 @@ import Testing
 }
 
 /// A one-route HTTP server on 127.0.0.1: `/start` answers 307 to `/stolen`; anything else 200.
+#if canImport(Network)
 final class RedirectServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "redirect-server")
@@ -174,3 +180,107 @@ final class RedirectServer: @unchecked Sendable {
         }
     }
 }
+#else
+// The same server on POSIX sockets, for platforms without Apple's Network framework.
+import Glibc
+
+final class RedirectServer: @unchecked Sendable {
+    private let descriptor: Int32
+    private let lock = NSLock()
+    private var seen: [String] = []
+    /// Signalled once the accept loop has returned, so `stop` closes the socket only after it.
+    private let finished = DispatchSemaphore(value: 0)
+    let port: UInt16
+    var paths: [String] { lock.withLock { seen } }
+
+    private init() throws {
+        let fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = 0
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let bound = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard bound == 0, listen(fd, 8) == 0 else {
+            let code = errno
+            close(fd)
+            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+        }
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        withUnsafeMutablePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { _ = getsockname(fd, $0, &length) }
+        }
+        descriptor = fd
+        port = UInt16(bigEndian: address.sin_port)
+    }
+
+    static func start() async throws -> RedirectServer {
+        let server = try RedirectServer()
+        Thread.detachNewThread { server.acceptLoop() }
+        return server
+    }
+
+    /// Wakes a blocked `accept` with `shutdown`, waits for the loop to return, then closes the
+    /// descriptor once, so the loop never touches a descriptor number reused elsewhere.
+    func stop() {
+        shutdown(descriptor, Int32(SHUT_RDWR))
+        finished.wait()
+        close(descriptor)
+    }
+
+    private func acceptLoop() {
+        defer { finished.signal() }
+        while true {
+            let connection = accept(descriptor, nil, nil)
+            if connection < 0 {
+                if errno == EINTR { continue }
+                return
+            }
+            // A client that stalls cannot hold the loop: reads give up after two seconds.
+            var timeout = timeval(tv_sec: 2, tv_usec: 0)
+            setsockopt(connection, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+            let path = Self.requestPath(connection)
+            lock.withLock { seen.append(path) }
+            let reply = path == "/start"
+                ? "HTTP/1.1 307 Temporary Redirect\r\nLocation: http://127.0.0.1:\(port)/stolen\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                : "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            Self.sendAll(Array(reply.utf8), to: connection)
+            close(connection)
+        }
+    }
+
+    /// The request line's path, read until the first CRLF (TCP may split it), capped at 64 KiB.
+    private static func requestPath(_ connection: Int32) -> String {
+        var received: [UInt8] = []
+        var chunk = [UInt8](repeating: 0, count: 4_096)
+        while received.count < 65_536, !received.containsCRLF {
+            let count = read(connection, &chunk, chunk.count)
+            if count < 0, errno == EINTR { continue }
+            if count <= 0 { break }
+            received.append(contentsOf: chunk[0..<count])
+        }
+        let line = String(decoding: received, as: UTF8.self).split(separator: "\r\n").first ?? ""
+        return line.split(separator: " ").dropFirst().first.map(String.init) ?? ""
+    }
+
+    /// Writes every byte, retrying short writes and EINTR; a gone peer ends it without SIGPIPE.
+    private static func sendAll(_ bytes: [UInt8], to connection: Int32) {
+        var offset = 0
+        while offset < bytes.count {
+            let sent = bytes[offset...].withUnsafeBytes { send(connection, $0.baseAddress, $0.count, Int32(MSG_NOSIGNAL)) }
+            if sent < 0, errno == EINTR { continue }
+            if sent <= 0 { return }
+            offset += sent
+        }
+    }
+}
+
+private extension Array where Element == UInt8 {
+    var containsCRLF: Bool {
+        guard count >= 2 else { return false }
+        return (1..<count).contains { self[$0 - 1] == 13 && self[$0] == 10 }
+    }
+}
+#endif

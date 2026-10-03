@@ -1,0 +1,4 @@
+module CPipe2 [system] {
+    header "shim.h"
+    export *
+}

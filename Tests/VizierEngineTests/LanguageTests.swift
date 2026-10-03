@@ -7,7 +7,11 @@ import Testing
 /// a language Apple doesn't support is reported as unsupported rather than swapped for English.
 @Suite struct LanguageTests {
     private func mode(_ languages: [String], removeFillers: Bool? = true) -> VizierConfig.Mode {
+        #if canImport(Speech)
         var mode = VizierConfig.Mode.apple(locale: Locale(identifier: "en-US"))
+        #else
+        var mode = VizierConfig.Mode.local  // Apple's speech engines do not exist on Linux; this mode needs no key either.
+        #endif
         mode.transcriber.languages = languages
         mode.removeFillers = removeFillers
         return mode
@@ -35,6 +39,7 @@ import Testing
         #expect(plan.removeFillers)
     }
 
+    #if canImport(Speech)
     @Test func theStarterFileNamesTheGivenLanguageInEveryMode() async throws {
         let german = try ConfigStore.parseSettings(ConfigStore.starterSettings(language: "de-DE"))
         #expect(german.modes.map(\.id) == ["apple", "scribe", "gemini-clean", "gemini-smart"])
@@ -81,6 +86,7 @@ import Testing
         let english = await AppleSpeechModel.resolve(system: Locale(identifier: "en-US")) { _ in Locale(identifier: "en_US") }
         #expect(english.identifier == "en_US")
     }
+    #endif
 }
 
 @Suite struct SpeechModelLocaleTests {

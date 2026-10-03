@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(SQLite3)
 import SQLite3
+#elseif canImport(CSQLite)
+import CSQLite
+#endif
 
 /// Where a take stands. `recording` and `finalizing` are in flight; the rest are terminal.
 public enum TakeOutcome: String, Codable, Sendable {
@@ -277,8 +281,7 @@ public final class HistoryStore: @unchecked Sendable {
     private let strandedAtOpen: [String]
     private let openedAtMs: Int64
 
-    public static let standardDatabaseURL = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: "Library/Application Support/Vizier/history.sqlite")
+    public static let standardDatabaseURL = VizierPaths.data.appending(path: "history.sqlite")
 
     public static func openStandard() throws -> HistoryStore {
         try HistoryStore(databaseURL: standardDatabaseURL, takesRoot: TakeStore.standard.root)
@@ -576,7 +579,7 @@ public final class HistoryStore: @unchecked Sendable {
     /// no text at all (a take that failed before any words arrived). Newest first; `before` pages
     /// by start time. An empty outcome set matches nothing; nil matches every outcome.
     public func search(_ query: String, outcomes: Set<TakeOutcome>?,
-                       limit: Int, before: Date?) throws -> [TakeRecord] {
+                       limit: Int, before: Date?, cursor: String? = nil) throws -> [TakeRecord] {
         if let outcomes, outcomes.isEmpty { return [] }
         var values: [SQLValue] = []
         // Placeholders only; every value is bound.
@@ -592,6 +595,14 @@ public final class HistoryStore: @unchecked Sendable {
                  OR EXISTS (SELECT 1 FROM attempts a WHERE a.take_id = takes.id AND a.attempt_no > 0
                             AND (a.final_text LIKE \(p) ESCAPE '\\' OR a.cleaned_text LIKE \(p) ESCAPE '\\' OR a.raw_transcript LIKE \(p) ESCAPE '\\')))
                 """)
+        }
+        if let cursor {
+            let parts = cursor.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2, let ms = Int64(parts[0]), !parts[1].isEmpty else {
+                throw HistoryError.sqlite(code: 21, message: "invalid history cursor")
+            }
+            let time = bind(.integer(ms)), id = bind(.text(String(parts[1])))
+            clauses.append("(started_at_ms < \(time) OR (started_at_ms = \(time) AND id < \(id)))")
         }
         if let before { clauses.append("started_at_ms < \(bind(.integer(Self.milliseconds(before))))") }
         if let outcomes {
@@ -738,20 +749,20 @@ public final class HistoryStore: @unchecked Sendable {
         let bytes: Int64
     }
 
-    /// CAF and FLAC files one level under each month folder, the layout `TakeStore` writes. When
-    /// both exist for an id the CAF wins: `TakeStore.finishAudio` removes it only after the FLAC
-    /// verifies, so a surviving CAF is the copy known to be whole.
+    /// Recording (CAF on macOS, WAV elsewhere) and FLAC files one level under each month folder, the
+    /// layout `TakeStore` writes. When both exist for an id the recording wins: `TakeStore.finishAudio`
+    /// removes it only after the FLAC verifies, so a surviving recording is the copy known to be whole.
     private func scanTakeFiles() -> [FoundFile] {
         let fm = FileManager.default
         guard let months = try? fm.contentsOfDirectory(at: takesRoot, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles) else { return [] }
         var byID: [String: FoundFile] = [:]
         for month in months where (try? month.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
             let files = (try? fm.contentsOfDirectory(at: month, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey], options: .skipsHiddenFiles)) ?? []
-            for file in files where file.pathExtension == "caf" || file.pathExtension == "flac" {
+            for file in files where file.pathExtension == TakeFiles.recordingExtension || file.pathExtension == "flac" {
                 guard let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]), values.isRegularFile == true else { continue }
                 let id = file.deletingPathExtension().lastPathComponent
                 let found = FoundFile(id: id, relativePath: month.lastPathComponent + "/" + file.lastPathComponent, bytes: Int64(values.fileSize ?? 0))
-                if byID[id] == nil || file.pathExtension == "caf" { byID[id] = found }
+                if byID[id] == nil || file.pathExtension == TakeFiles.recordingExtension { byID[id] = found }
             }
         }
         return byID.values.sorted { $0.id < $1.id }

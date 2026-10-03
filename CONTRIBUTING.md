@@ -1,6 +1,6 @@
 # Contributing
 
-Vizier is a native macOS app written in Swift. It needs macOS 27 or later on Apple Silicon, and Xcode 27 or later (Swift 6.2+) to build.
+Vizier is written in Swift. It is a native macOS app (macOS 27 or later on Apple Silicon, Xcode 27 or later with Swift 6.2+) and a Linux daemon and command, `vizier` (Swift 6.4), both built on the shared `VizierEngine` library.
 
 ## Build and test
 
@@ -12,6 +12,21 @@ scripts/test-release-checks.sh  # tests for the release script's checks (not par
 ```
 
 Run the tests that cover what you changed while you work, and the full suite before you open a pull request.
+
+On Linux:
+
+```bash
+swift build -c release --product vizier   # the Linux binary
+scripts/linux/ci.sh                       # the Linux build and tests in a clean Docker container
+```
+
+Linux checks run on Linux, and the macOS app and its tests build only on a Mac, so a change to shared engine code should pass both. If you only have one OS, say which you ran in the pull request.
+
+## Platform code
+
+- Engine code that both platforms use goes in `Sources/VizierEngine`. Code that needs a platform framework goes behind `#if canImport(<framework>)` (for example `AVFoundation`, `Security`, `os`, `FoundationNetworking`), or in a file wrapped the same way. Use `#if os(macOS)` or `#if os(Linux)` only for a difference in behavior, such as paths and defaults. Put platform differences in an adapter that implements a protocol from `Sources/VizierEngine/Session/Contracts.swift` or `Capture/AudioCapture.swift`.
+- The macOS app lives in `Sources/Vizier`; the Linux daemon in `Sources/VizierCLI` and `Sources/vizier-linux`. Neither imports the other. The take state machine is `TakeSession` in the engine; do not add take logic to a front end.
+- A change to engine code must keep the Mac's behavior byte for byte (config defaults, paths, wording) unless the change is meant for the Mac. Platform wording lives in `TakeRemarks`.
 Do not run `scripts/install.sh` unless you mean to replace your own installed copy: it quits and relaunches Vizier.
 
 ## Looking at the UI without the installed app

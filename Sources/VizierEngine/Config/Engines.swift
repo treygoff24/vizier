@@ -21,8 +21,10 @@ public enum Engines {
     /// a cloud engine with no key gets no transcriber.
     public static func batch(_ spec: VizierConfig.Fallback, languages: [String], vocabulary: [String], key: String?) -> (any BatchTranscriber)? {
         switch spec.engine {
+        #if canImport(Speech)
         case "apple-speech-batch":
             return AppleSpeechBatchTranscriber(locale: appleLocale(languages))
+        #endif
         case "local-whisper":
             return LocalWhisperTranscriber(url: spec.url.flatMap(URL.init(string:)) ?? LocalWhisper.defaultURL)
         case "elevenlabs-scribe-batch":
@@ -36,7 +38,7 @@ public enum Engines {
 
     /// The locale an Apple engine runs in: the mode's first language, else the system's.
     public static func appleLocale(_ languages: [String]) -> Locale {
-        languages.first.map(Locale.init(identifier:)) ?? AppleSpeechModel.preferredLocale()
+        languages.first.map(Locale.init(identifier:)) ?? SystemLocale.preferred()
     }
 
     /// The locale whose Apple speech model the active mode needs: its first language, whether Apple
@@ -50,8 +52,10 @@ public enum Engines {
     /// `key` is nil. Apple's engine needs none, so it is made either way.
     public static func live(_ transcriber: VizierConfig.Transcriber, vocabulary: [String], key: String?) -> (any LiveTranscriber)? {
         switch transcriber.engine {
+        #if canImport(Speech)
         case "apple-speech":
             return AppleSpeechTranscriber(locale: appleLocale(transcriber.languages), finalTimeoutMs: transcriber.finalTimeoutMs)
+        #endif
         case "elevenlabs-scribe-realtime":
             guard let key else { return nil }
             let setup = ScribeRealtime.Setup(

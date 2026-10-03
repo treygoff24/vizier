@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Vizier
+Comment=Dictation daemon
+Exec=vizier daemon
+Icon=audio-input-microphone
+Terminal=false
+NoDisplay=true
+Categories=Utility;
+X-GNOME-Autostart-enabled=false

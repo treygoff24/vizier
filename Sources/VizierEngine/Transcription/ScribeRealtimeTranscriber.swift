@@ -1,5 +1,10 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(os)
 import os
+#endif
 
 /// Streams one take to ElevenLabs Scribe v2 Realtime over a WebSocket. The protocol decisions live
 /// in `ScribeRealtimeSession`; this class moves bytes, keeps them in order, and turns every way the
@@ -45,6 +50,16 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
         self.repairTimeout = .milliseconds(max(finalTimeoutMs / 2, finalTimeoutMs - 1_000))
     }
 
+    #if os(Linux)
+    // Loopback tests exercise FoundationNetworking itself, without provider credentials.
+    private var testEndpoint: URL?
+
+    convenience init(setup: ScribeRealtime.Setup, apiKey: String, finalTimeoutMs: Int, endpoint: URL) {
+        self.init(setup: setup, apiKey: apiKey, finalTimeoutMs: finalTimeoutMs)
+        self.testEndpoint = endpoint
+    }
+    #endif
+
     deinit {
         live?.socket.cancel(with: .goingAway, reason: nil)
         repair?.socket.cancel(with: .goingAway, reason: nil)
@@ -85,7 +100,11 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
     }
 
     private func connect() -> Link {
+        #if os(Linux)
+        var request = URLRequest(url: testEndpoint ?? ScribeRealtime.url(setup))
+        #else
         var request = URLRequest(url: ScribeRealtime.url(setup))
+        #endif
         request.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
         let socket = Self.urlSession.webSocketTask(with: request)
         socket.resume()

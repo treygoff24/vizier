@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(os)
 import os
+#endif
 
 /// One take's history row and the text the take has so far. `TakeController` calls it at every
 /// stage; each call writes through to the store before it returns, so text that exists is on disk

@@ -1,111 +1,9 @@
-import AVFoundation
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import Testing
 @testable import VizierEngine
-
-/// Every request the transcriber sends, answered from a canned script. Fixtures follow the
-/// shapes in ai.google.dev/gemini-api/docs/files and ai.google.dev/api/files.
-actor StubServer {
-    typealias Handler = @Sendable (URLRequest) -> (Int, [String: String], Data)
-    private(set) var requests: [URLRequest] = []
-    private let handler: Handler
-
-    init(_ handler: @escaping Handler) { self.handler = handler }
-
-    func answer(_ request: URLRequest) -> (Data, URLResponse) {
-        requests.append(request)
-        let (status, headers, body) = handler(request)
-        return (body, HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!)
-    }
-}
-
-enum Fixture {
-    static let config = GeminiBatch.Config(model: "gemini-3.5-transcribe", mode: "smart", languages: ["en-US"], vocabulary: ["Zorblex"])
-    static let uploadURL = "https://generativelanguage.googleapis.com/upload/v1beta/files?upload_id=zx81&upload_protocol=resumable"
-    static let interaction = answer("completed", "Zorblex the quaxil.")
-
-    static func answer(_ status: String, _ text: String) -> Data {
-        Data(#"{"status": "\#(status)", "steps": [{"type": "model_output", "content": [{"type": "text", "text": "\#(text)"}]}]}"#.utf8)
-    }
-
-    static func file(state: String) -> String {
-        #"{"name": "files/quaxil-7", "displayName": "t", "mimeType": "audio/flac", "uri": "https://generativelanguage.googleapis.com/v1beta/files/quaxil-7", "state": "\#(state)"}"#
-    }
-
-    /// A take's FLAC as TakeStore writes it: 16 kHz mono, named by its take id. `seconds` of a
-    /// tone with deterministic noise, or of silence (which FLAC shrinks to almost nothing).
-    static func flac(seconds: Int, silent: Bool = false) throws -> URL {
-        let directory = FileManager.default.temporaryDirectory.appending(path: "vizier-files-tests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appending(path: "2026-09-25T12-00-00.000Z.flac")
-        let file = try AVAudioFile(forWriting: url, settings: TakeStore.flacSettings, commonFormat: .pcmFormatInt16, interleaved: true)
-        let minute = 16_000 * 60
-        let buffer = AVAudioPCMBuffer(pcmFormat: HALCapture.outputFormat, frameCapacity: AVAudioFrameCount(minute))!
-        if !silent {
-            for i in 0..<minute {
-                buffer.int16ChannelData![0][i] = Int16(8_000 * sin(Double(i) * 2 * .pi * 440 / 16_000)) &+ Int16(truncatingIfNeeded: (i &* 7919) % 97)
-            }
-        }
-        var left = seconds * 16_000
-        while left > 0 {
-            buffer.frameLength = AVAudioFrameCount(min(left, minute))
-            try file.write(from: buffer)
-            left -= Int(buffer.frameLength)
-        }
-        file.close()
-        return url
-    }
-
-    static func size(_ url: URL) throws -> Int { try Data(contentsOf: url).count }
-
-    /// A server where every step succeeds, with overrides by step. `answers` scripts successive
-    /// interaction replies as (HTTP status, body); once it runs out, replies are completed.
-    static func server(
-        start: Int = 200, uploadLocation: String = uploadURL, upload: Int = 200, uploadBody: Data? = nil, interact: Int = 200, delete: Int = 200,
-        uploadedState: String = "ACTIVE", polledStates: [String] = [], pollsSettleOn: String = "ACTIVE", answers: [(Int, Data)] = []
-    ) -> StubServer {
-        let polls = Script(polledStates, otherwise: pollsSettleOn)
-        let replies = Script(answers, otherwise: (interact, interaction))
-        return StubServer { request in
-            let url = request.url!.absoluteString
-            let error = Data(#"{"error": {"code": 500, "message": "Synthetic failure.", "status": "INTERNAL"}}"#.utf8)
-            switch (request.httpMethod, url) {
-            case ("POST", GeminiFiles.uploadEndpoint.absoluteString):
-                return start == 200 ? (200, ["X-Goog-Upload-URL": uploadLocation], Data()) : (start, [:], error)
-            case ("POST", uploadURL):
-                return upload == 200 ? (200, [:], uploadBody ?? Data(#"{"file": \#(file(state: uploadedState))}"#.utf8)) : (upload, [:], error)
-            case ("GET", _):
-                return (200, [:], Data(file(state: polls.next()).utf8))
-            case ("POST", GeminiBatch.endpoint.absoluteString):
-                let (status, body) = replies.next()
-                return status == 200 ? (200, [:], body) : (status, [:], error)
-            case ("DELETE", _):
-                return delete == 200 ? (200, [:], Data("{}".utf8)) : (delete, [:], error)
-            default:
-                return (404, [:], Data())
-            }
-        }
-    }
-
-    final class Script<Item>: @unchecked Sendable {
-        private let lock = NSLock()
-        private var items: [Item]
-        private let otherwise: Item
-        init(_ items: [Item], otherwise: Item) { self.items = items; self.otherwise = otherwise }
-        func next() -> Item { lock.withLock { items.isEmpty ? otherwise : items.removeFirst() } }
-    }
-
-    static func transcriber(_ server: StubServer, maxInlineBytes: Int) -> GeminiBatchTranscriber {
-        GeminiBatchTranscriber(
-            config: config, apiKey: "test-key", perform: { await server.answer($0) }, maxInlineBytes: maxInlineBytes,
-            pollInterval: .zero)
-    }
-
-    static func json(_ data: Data?) throws -> NSDictionary {
-        let data = try #require(data)
-        return try #require(JSONSerialization.jsonObject(with: data) as? NSDictionary)
-    }
-}
 
 @Suite struct GeminiFilesBatchTests {
     @Test func aTakeAtTheInlineCapIsOneInlineRequest() async throws {
@@ -116,7 +14,7 @@ enum Fixture {
         let requests = await server.requests
         #expect(requests.count == 1)
         #expect(requests.first?.url == GeminiBatch.endpoint)
-        let input = try #require(try Fixture.json(requests.first?.httpBody).value(forKeyPath: "input") as? [NSDictionary])
+        let input = try #require(try Fixture.json(requests.first?.httpBody).value(forKey: "input") as? [NSDictionary])
         #expect(input.first?["data"] as? String == (try Data(contentsOf: audio)).base64EncodedString())
         #expect(input.first?["uri"] == nil)
         #expect(requests.first?.value(forHTTPHeaderField: "x-goog-api-key") == "test-key")

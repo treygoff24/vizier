@@ -1,6 +1,11 @@
+#if canImport(Darwin)
 import AVFoundation
 import Foundation
+#if canImport(SQLite3)
 import SQLite3
+#elseif canImport(CSQLite)
+import CSQLite
+#endif
 import Testing
 @testable import VizierEngine
 
@@ -320,3 +325,4 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: takes.root.path))
     }
 }
+#endif

@@ -61,6 +61,8 @@ enum Paster {
 
     /// The failure when Vizier lacks Accessibility access, which it needs to post Cmd+V.
     static let accessibilityMissing = "Accessibility is not granted"
+    /// The failure when the text could not be put on the clipboard at all.
+    static let clipboardWriteFailed = "could not write the clipboard"
     static let prePasteDelay: Duration = .milliseconds(100)
     static let keyEventGap: Duration = .milliseconds(10)
     /// Marks Vizier's own Cmd+V events, so the event tap never mistakes them for a typed Cmd+V.
@@ -75,7 +77,7 @@ enum Paster {
     /// no time on the common path. `stillWanted` is checked after the pause, so an Escape in that
     /// window stops the paste (the text is already on the clipboard).
     static func paste(_ text: String, appAtStop: pid_t?, stillWanted: () -> Bool) async -> Outcome {
-        guard setClipboard(text) else { return .failed("could not write the clipboard") }
+        guard setClipboard(text) else { return .failed(clipboardWriteFailed) }
         let clock = ContinuousClock()
         let checkStarted = clock.now
         let decision = checkTarget(started: checkStarted, appAtStop: appAtStop)

@@ -1,3 +1,4 @@
+#if canImport(Speech)
 import Foundation
 import Speech
 
@@ -132,3 +133,4 @@ public enum AppleSpeechError: Error, Equatable, Sendable, CustomStringConvertibl
         }
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if canImport(Darwin)
 import Darwin
 import Foundation
 import Testing
@@ -206,3 +207,4 @@ import Testing
         #expect(outcomes.contains { $0.blocksLaunch })
     }
 }
+#endif

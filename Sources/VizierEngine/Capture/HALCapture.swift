@@ -1,3 +1,4 @@
+#if canImport(AudioToolbox)
 // Adapted from VoiceInk v2.20 (https://github.com/Beingpax/VoiceInk, tag v2.20):
 //   VoiceInk/Infrastructure/Audio/CoreAudioRecorder.swift
 // VoiceInk is licensed under the GNU General Public License v3.0.
@@ -38,17 +39,8 @@ public enum CaptureError: Error, CustomStringConvertible {
 }
 
 public final class HALCapture: @unchecked Sendable {
-    public enum Event: Sendable {
-        /// The first buffer with a nonzero sample since `start`.
-        case signal
-        case deviceSwitched(name: String)
-        case deviceSwitchFailed(String)
-    }
-
-    public struct Stats: Sendable {
-        public var deviceSwitches = 0
-        public var droppedBuffers: UInt64 = 0
-    }
+    public typealias Event = CaptureEvent
+    public typealias Stats = CaptureStats
 
     /// 16 kHz mono signed 16-bit, the format every take is stored and streamed in.
     public static let outputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
@@ -597,3 +589,4 @@ public final class HALCapture: @unchecked Sendable {
         return pair.compactMap { seen.insert($0).inserted ? Int32($0 - 1) : nil }
     }
 }
+#endif

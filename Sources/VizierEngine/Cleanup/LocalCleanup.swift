@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Local cleanup: a bring-your-own cleanup model server on this Mac, behind the
 /// OpenAI-style `POST /v1/chat/completions`. The server builds its own prompt and glossary and

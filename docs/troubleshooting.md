@@ -1,5 +1,7 @@
 # Troubleshooting
 
+This page is about the Mac app. On Linux, run `vizier doctor` and see the troubleshooting section of [Vizier on Linux](linux.md#troubleshooting).
+
 Whenever a take does not go as expected, it is still in History with its audio, and its detail pane gives a reason. The text of a held take is on the clipboard.
 
 ## Common problems
@@ -61,7 +63,7 @@ Statuses are PASTED, RE-ROUTED, HELD, FAILED, CANCELLED, DELAYED and BATCH (see 
 | No speech came through. | Nothing audible was heard. |
 | The mic never delivered audio. / The mic could not start. Check the input device. | Check the input device and the Microphone permission. |
 | Local whisper did not answer. Is its server running? | See [Local Whisper](modes-and-config.md#local-whisper-experimental). |
-| The paste did not go through / No text field had focus / Vizier itself had focus / You switched apps after the take stopped | Nothing was pasted; the text is on the clipboard. |
+| The paste did not go through / No text field had focus / Vizier itself had focus / You switched apps after the take stopped | Nothing was pasted. The text is on the clipboard, unless the message says it is saved in History instead (the clipboard write failed). |
 | The cleanup pass did not finish in time / failed / dropped too many words / added words | The raw transcript was pasted instead of the cleaned one. |
 | The live transcript did not finish, so the settled words were pasted. | The text may be missing its last words. |
 | The take is longer than the batch model's one-hour limit | The audio is saved, not transcribed. |

@@ -1,3 +1,4 @@
+#if canImport(Darwin)
 import Darwin
 import Foundation
 import os
@@ -127,3 +128,4 @@ public enum UserDataMigration {
         }
     }
 }
+#endif

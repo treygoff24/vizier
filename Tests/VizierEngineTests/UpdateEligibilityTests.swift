@@ -1,3 +1,4 @@
+#if canImport(Security)
 import Foundation
 import Testing
 
@@ -71,3 +72,4 @@ struct UpdateEligibilityTests {
         return String(decoding: data, as: UTF8.self)
     }
 }
+#endif

@@ -19,8 +19,14 @@ import Testing
         let load = store.load()
         #expect(load.errors.isEmpty)
         #expect(load.config == VizierConfig())
+        #if canImport(Speech)
         #expect(load.config.activeMode == .apple)
         #expect(load.config.settings.modes.map(\.id) == ["apple", "scribe", "gemini-clean", "gemini-smart"])
+        #else
+        // Apple's speech engines do not exist on Linux: the local Whisper mode is the default.
+        #expect(load.config.activeMode == .local)
+        #expect(load.config.settings.modes.map(\.id) == ["local", "scribe", "gemini-clean", "gemini-smart"])
+        #endif
     }
 
     @Test func theStarterFilesParseToTheDefaults() throws {
@@ -201,7 +207,7 @@ import Testing
         let after = try store.setActiveMode("gemini-clean", expected: before)
         #expect(after.settings.mode == "gemini-clean")
         let text = try String(contentsOf: store.settingsURL, encoding: .utf8)
-        #expect(text == ConfigStore.starterSettings.replacingOccurrences(of: "\"mode\": \"apple\",", with: "\"mode\": \"gemini-clean\","))
+        #expect(text == ConfigStore.starterSettings.replacingOccurrences(of: "\"mode\": \"\(VizierConfig.Settings().mode)\",", with: "\"mode\": \"gemini-clean\","))
         #expect(store.load().config.activeMode.id == "gemini-clean")
         #expect(try store.settingsSnapshot() == after)
     }

@@ -1,5 +1,10 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(os)
 import os
+#endif
 
 /// Streams one take to `gemini-3.5-transcribe-live` over a WebSocket. The protocol decisions live
 /// in `GeminiLiveSession`; this class moves bytes, keeps them in order, and turns every way the
@@ -29,6 +34,16 @@ public final class GeminiLiveTranscriber: LiveTranscriber, @unchecked Sendable {
         self.finalTimeout = .milliseconds(finalTimeoutMs)
     }
 
+    #if os(Linux)
+    // Loopback tests exercise FoundationNetworking itself, without provider credentials.
+    private var testEndpoint: URL?
+
+    convenience init(setup: GeminiLive.Setup, apiKey: String, finalTimeoutMs: Int, endpoint: URL) {
+        self.init(setup: setup, apiKey: apiKey, finalTimeoutMs: finalTimeoutMs)
+        self.testEndpoint = endpoint
+    }
+    #endif
+
     deinit {
         socket?.cancel(with: .goingAway, reason: nil)
     }
@@ -37,7 +52,11 @@ public final class GeminiLiveTranscriber: LiveTranscriber, @unchecked Sendable {
         queue.async { [self] in
             guard socket == nil, outcome == nil else { return }
             self.onEvent = onEvent
+            #if os(Linux)
+            var request = URLRequest(url: testEndpoint ?? GeminiLive.endpoint)
+            #else
             var request = URLRequest(url: GeminiLive.endpoint)
+            #endif
             request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
             let socket = Self.urlSession.webSocketTask(with: request)
             self.socket = socket

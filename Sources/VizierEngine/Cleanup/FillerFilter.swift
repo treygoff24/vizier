@@ -39,7 +39,7 @@ public enum FillerFilter {
     /// ("Ein- und Ausgang"), so a take in any other language skips the filter. A mode that names
     /// no language listens in the system's.
     public static func applies(to mode: VizierConfig.Mode) -> Bool {
-        mode.removeFillers == true && isEnglish(mode.transcriber.languages.first ?? AppleSpeechModel.preferredLocale().identifier)
+        mode.removeFillers == true && isEnglish(mode.transcriber.languages.first ?? SystemLocale.preferred().identifier)
     }
 
     static func isEnglish(_ language: String) -> Bool {

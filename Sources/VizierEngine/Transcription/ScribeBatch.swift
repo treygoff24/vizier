@@ -1,5 +1,10 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(os)
 import os
+#endif
 
 /// The wire format of ElevenLabs Scribe batch speech-to-text (`POST /v1/speech-to-text`), checked
 /// against the API reference: a multipart form with the file and settings, answered

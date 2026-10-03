@@ -1,5 +1,10 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(os)
 import os
+#endif
 
 /// The Gemini Files API route for takes too large to send inline: upload the FLAC, transcribe it
 /// by reference, delete it. Wire format checked against

@@ -1,5 +1,10 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(os)
 import os
+#endif
 
 /// Local transcription: whisper.cpp's `whisper-server` on this Mac, serving large-v3-turbo behind
 /// the OpenAI-style `POST /v1/audio/transcriptions` path (started with `--inference-path`). A

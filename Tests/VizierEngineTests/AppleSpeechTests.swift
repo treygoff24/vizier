@@ -1,3 +1,4 @@
+#if canImport(Speech)
 import AVFoundation
 import Foundation
 import Testing
@@ -305,7 +306,9 @@ private final class Recorded: @unchecked Sendable {
 
     @Test(.timeLimit(.minutes(1))) func aLanguageAppleCannotHearFailsLoudlyInsteadOfSilently() async throws {
         // Apple has no model for this language, so the take must say so rather than hear nothing.
-        let transcriber = AppleSpeechTranscriber(locale: Locale(identifier: "tlh"), finalTimeoutMs: 2_000)
+        // The unsupported-locale answer must beat the final timeout; under a full parallel suite the
+        // system's locale lookup has taken over 2 s, and a timeout cancels the stream before it reports.
+        let transcriber = AppleSpeechTranscriber(locale: Locale(identifier: "tlh"), finalTimeoutMs: 20_000)
         let recorded = Recorded()
         transcriber.start { recorded.add($0) }
         transcriber.send(Data(count: 3_200))
@@ -313,3 +316,4 @@ private final class Recorded: @unchecked Sendable {
         #expect(recorded.events.contains { if case .streamLost = $0 { true } else { false } })
     }
 }
+#endif
