@@ -27,12 +27,24 @@ else
 fi
 
 swift build --build-tests --jobs 8
+# Each test run is bounded. The suites take seconds; a run that stops making progress (a test
+# that hangs, or a cooperative thread pool that every test is parked on) fails here with the
+# tests that started still on screen, instead of holding the CI job until its own timeout.
+limit=${VIZIER_CI_TEST_LIMIT:-600}
+bounded() {
+    local status=0
+    timeout --kill-after=30 "$limit" "$@" || status=$?
+    if [[ $status == 124 || $status == 137 ]]; then
+        printf '\n%s\n' "Linux CI: the test run passed its ${limit} s limit and was stopped; look for tests that started and never finished" >&2
+    fi
+    return "$status"
+}
 args=(swift test --skip-build --parallel --num-workers 8)
 if [[ -n "${VIZIER_CI_FILTER:-}" ]]; then
     args+=(--filter "$VIZIER_CI_FILTER")
 fi
-"${args[@]}" 2>&1 | tee /home/vizier/tests.log
-scripts/linux/portal-mock/run.sh swift test --skip-build --parallel --num-workers 8 \
+bounded "${args[@]}" 2>&1 | tee /home/vizier/tests.log
+scripts/linux/portal-mock/run.sh timeout --kill-after=30 "$limit" swift test --skip-build --parallel --num-workers 8 \
     --filter Portal 2>&1 | tee /home/vizier/portal-tests.log
 
 # Report each Swift Testing count, and reject an accidental empty selection.

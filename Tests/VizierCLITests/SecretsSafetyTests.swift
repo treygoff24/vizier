@@ -69,7 +69,8 @@ private func modeBits(_ path: String) -> mode_t {
 }
 
 /// A failing helper's stderr is never put in any message the user or a script sees.
-@Suite struct SecretsStderrTests {
+// A hang fails the test in a minute instead of holding the CI job until it is cancelled.
+@Suite(.timeLimit(.minutes(1))) struct SecretsStderrTests {
     private let planted = "SYNTHETIC-STDERR-SECRET-7731"
 
     @Test func aFailingSecretToolsStderrAppearsInNoKeyStatusOrSetupOutput() async throws {
@@ -88,7 +89,7 @@ private func modeBits(_ path: String) -> mode_t {
         for action in ["status", "delete", "set"] {
             var args: [String: JSONValue] = ["action": .string(action)]
             if action != "status" { args["account"] = .string("gemini") }
-            let reply = KeyCommand.run(args: args, environment: env, configDirectory: directory, secretServiceLocator: locator, readKey: { "AIza-key" })
+            let reply = try await offThePool { KeyCommand.run(args: args, environment: env, configDirectory: directory, secretServiceLocator: locator, readKey: { "AIza-key" }) }
             everything += String(decoding: try Wire.line(reply), as: UTF8.self)
             if let result = reply.result { everything += KeyCommand.describe(result) }
             if let error = reply.error { everything += "\(error.message) \(error.next)" }
@@ -98,7 +99,7 @@ private func modeBits(_ path: String) -> mode_t {
         #expect(!everything.contains(planted) && !everything.contains("/home/someone"), "stderr leaked: \(everything)")
 
         // The store's own error, directly.
-        do { _ = try SecretToolStore(environment: env, locator: locator).read("gemini"); Issue.record("the failing tool was not reported") }
+        do { _ = try await offThePool { try SecretToolStore(environment: env, locator: locator).read("gemini") }; Issue.record("the failing tool was not reported") }
         catch { #expect(!"\(error)".contains(planted)) }
 
         // And `vizier setup --autostart` when systemctl fails.

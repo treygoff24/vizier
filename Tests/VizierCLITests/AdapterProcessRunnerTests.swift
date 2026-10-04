@@ -3,7 +3,8 @@ import Glibc
 import Testing
 @testable import VizierCLI
 
-@Suite struct AdapterProcessRunnerTests {
+// A hang fails the test in a minute instead of holding the CI job until it is cancelled.
+@Suite(.timeLimit(.minutes(1))) struct AdapterProcessRunnerTests {
     private func sh(_ script: String, stdin: Data? = nil, timeout: Duration = .seconds(10), grace: Duration = .seconds(1), limit: Int = 1 << 20) async throws -> ProcessResult {
         try await ProcessRunner.run(["/bin/sh", "-c", script], stdin: stdin, timeout: timeout, killGrace: grace, outputLimit: limit)
     }
@@ -165,5 +166,31 @@ import Testing
         defer { close(descriptor) }
         let result = try await sh("if [ -e /proc/$$/fd/\(descriptor) ]; then echo inherited; else echo closed; fi")
         #expect(result.stdoutText == "closed\n")
+    }
+
+    // MARK: runSync
+
+    @Test func runSyncRunsOnTheCallersThreadAndPutsItsSignalMaskBack() async throws {
+        let outcome = try await offThePool { () -> (ProcessResult, Bool, Bool, ProcessResult) in
+            var pipeSignal = sigset_t()
+            sigemptyset(&pipeSignal)
+            sigaddset(&pipeSignal, SIGPIPE)
+            pthread_sigmask(SIG_UNBLOCK, &pipeSignal, nil)
+            let echoed = try ProcessRunner.runSync(["/bin/sh", "-c", "cat; echo err >&2; exit 4"], stdin: Data("in\n".utf8))
+            // A helper that closes its stdin and stays a while: writing to it raises SIGPIPE on this thread.
+            let unread = try ProcessRunner.runSync(["/bin/sh", "-c", "exec 0<&-; sleep 0.3"], stdin: Data(repeating: 0x61, count: 1 << 20))
+            var mask = sigset_t()
+            pthread_sigmask(SIG_SETMASK, nil, &mask)
+            var pending = sigset_t()
+            sigpending(&pending)
+            return (echoed, sigismember(&mask, SIGPIPE) == 1, sigismember(&pending, SIGPIPE) == 1, unread)
+        }
+        let (echoed, stillBlocked, stillPending, unread) = outcome
+        #expect(echoed.stdoutText == "in\n" && echoed.stderrText == "err\n" && echoed.exitCode == 4)
+        #expect(unread.exitCode == 0)
+        #expect(!stillBlocked, "runSync left SIGPIPE blocked on its caller's thread")
+        #expect(!stillPending, "runSync left a SIGPIPE pending")
+        #expect(throws: ProcessRunError.notFound("vizier-no-such-tool")) { try ProcessRunner.runSync(["vizier-no-such-tool"]) }
+        #expect(throws: ProcessRunError.emptyCommand) { try ProcessRunner.runSync([]) }
     }
 }

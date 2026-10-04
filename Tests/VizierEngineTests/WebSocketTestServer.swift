@@ -67,7 +67,11 @@ final class WebSocketTestServer: @unchecked Sendable {
         guard fd >= 0 else { return }
         lock.withLock { client = fd; if stopped { _ = shutdown(fd, Int32(SHUT_RDWR)) } }
         defer { lock.withLock { client = -1; Glibc.close(fd) } }
-        var timeout = timeval(tv_sec: 3, tv_usec: 0)
+        // A backstop only: stop() wakes a blocked recv or send with shutdown. A recv that times out
+        // fails with EAGAIN and is recorded as a server error, so the bound must outlast any pause a
+        // healthy client can take. With the whole suite running on a 2-vCPU runner, the client's
+        // tasks have waited over 2 s for a cooperative thread at startup; 3 s was too tight.
+        var timeout = timeval(tv_sec: 30, tv_usec: 0)
         _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         do {

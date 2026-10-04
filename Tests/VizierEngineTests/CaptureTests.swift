@@ -145,8 +145,11 @@ private func shell(_ script: String) -> [String] { ["/bin/sh", "-c", script] }
         try capture.start(sink: { log.sink($0) }, onEvent: { log.event($0) })
         func running() -> Bool { !processes(containing: marker).isEmpty }
         let deadline = Date().addingTimeInterval(5)
-        while !running(), Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
-        #expect(running(), "the recorder was running (precondition)")
+        // One sighting is the precondition. A second look can miss: while sh execs yes, the
+        // process's /proc cmdline reads empty for a moment.
+        var seen = running()
+        while !seen, Date() < deadline { Thread.sleep(forTimeInterval: 0.01); seen = running() }
+        #expect(seen, "the recorder was running (precondition)")
         // Under a loaded machine the child can be running before its first bytes arrive.
         while log.count == 0, Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
         let started = Date()

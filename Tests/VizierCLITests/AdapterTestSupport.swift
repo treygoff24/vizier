@@ -2,6 +2,30 @@ import Foundation
 import Glibc
 @testable import VizierCLI
 
+/// Runs `body` on a thread of its own and waits for it without holding a cooperative thread.
+///
+/// For calls that block their thread until async work finishes on the cooperative pool: a Secret
+/// Service lookup does (`Blocking.run` parks the caller on a semaphore while a detached task asks
+/// the bus). The CLI makes those calls from the main thread and the daemon from its refresh
+/// queue. A sync test makes them from a pool thread, and with enough such tests running at once
+/// every pool thread is parked waiting for a task that needs one. On a 4-vCPU CI runner the
+/// whole VizierCLITests run then stopped, every test started and none finished.
+func offThePool<T: Sendable>(_ body: @escaping () throws -> T) async throws -> T {
+    let work = OffThePoolBody(body)
+    return try await withCheckedThrowingContinuation { continuation in
+        let thread = Thread { continuation.resume(with: Result { try work.run() }) }
+        thread.name = "vizier-tests.off-the-pool"
+        thread.start()
+    }
+}
+
+/// The body `offThePool` hands to its thread. The caller stays suspended until the thread has
+/// finished with it, so the body never runs concurrently with the code that made it.
+private final class OffThePoolBody<T>: @unchecked Sendable {
+    let run: () throws -> T
+    init(_ run: @escaping () throws -> T) { self.run = run }
+}
+
 /// A temp directory of fake helper executables. Each fake appends its argv (one line per
 /// argument, then a `--` line) to `<name>.argv` and its stdin to `<name>.stdin`, writes
 /// `$YDOTOOL_SOCKET` to `<name>.sock`, then runs `body`.

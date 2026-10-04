@@ -104,6 +104,44 @@ public enum ProcessRunner {
         }
     }
 
+    /// `run` for synchronous callers: the helper is run and waited for on the calling thread, with
+    /// no task and nothing asked of the cooperative pool, so it completes even while every pool
+    /// thread is busy. It blocks its caller for up to `timeout` plus `killGrace`; call it from a
+    /// thread that may block (the main thread of a one-shot command, a dispatch queue or a thread
+    /// of its own), not from a Swift-concurrency thread.
+    public static func runSync(
+        _ argv: [String],
+        stdin: Data? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        timeout: Duration = .seconds(10),
+        killGrace: Duration = .seconds(1),
+        outputLimit: Int = 1 << 20
+    ) throws -> ProcessResult {
+        guard let name = argv.first else { throw ProcessRunError.emptyCommand }
+        guard let executable = resolve(name, environment: environment) else { throw ProcessRunError.notFound(name) }
+        // Writing stdin to a helper that stopped reading raises SIGPIPE, blocked here as on `run`'s
+        // own thread. The caller's thread is borrowed, so its mask is put back afterwards, with any
+        // SIGPIPE raised meanwhile taken first so that unblocking does not deliver it.
+        var pipeSignal = sigset_t()
+        sigemptyset(&pipeSignal)
+        sigaddset(&pipeSignal, SIGPIPE)
+        var previous = sigset_t()
+        pthread_sigmask(SIG_BLOCK, &pipeSignal, &previous)
+        defer {
+            if sigismember(&previous, SIGPIPE) == 0 {
+                var pending = sigset_t()
+                if sigpending(&pending) == 0, sigismember(&pending, SIGPIPE) == 1 {
+                    var now = timespec()
+                    _ = sigtimedwait(&pipeSignal, nil, &now)
+                }
+                pthread_sigmask(SIG_SETMASK, &previous, nil)
+            }
+        }
+        return try runBlocking(
+            executable, argv, stdin: stdin, environment: environment,
+            timeout: timeout, killGrace: killGrace, outputLimit: outputLimit)
+    }
+
     /// Starts a helper that serves after the call (wl-copy, xclip and xsel hold the clipboard until
     /// it is replaced). Its stdout and stderr go to /dev/null, so nothing waits for an EOF that
     /// never comes. `stdin` is written, then closed. Waits up to `settle` for the helper to exit

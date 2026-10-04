@@ -55,9 +55,13 @@ public enum SecretBackend: String, Sendable, Equatable, Codable {
     case environment, secretService = "secret-service", file
 }
 
-/// Runs asynchronous work to completion on a helper thread and waits for it. The secret store
-/// protocol is synchronous, so this blocks the caller: it is for the snapshot refresher's own
-/// threads and for the CLI's one-shot commands, never for the main actor.
+/// Runs asynchronous work to completion and waits for it. The secret store protocol is
+/// synchronous, so this blocks the caller while the work runs as a detached task on Swift's
+/// cooperative thread pool. Call it only from a thread that is not one of that pool's: the snapshot
+/// refresher's dispatch queue, or the main thread of a one-shot CLI command. Never from code running
+/// on the cooperative pool (a nonisolated async function, a `Task` that is not on the main actor):
+/// the caller would hold a pool thread while waiting for a task that needs one, and with enough
+/// such callers at once every pool thread waits and nothing runs again.
 enum Blocking {
     private final class Box<T: Sendable>: @unchecked Sendable {
         let semaphore = DispatchSemaphore(value: 0)
@@ -77,10 +81,11 @@ enum Blocking {
 }
 
 /// Runs a short helper and waits for it, for at most `timeout` (a locked keyring waiting on a
-/// prompt is cut off there). The process runs on `ProcessRunner`'s own thread.
+/// prompt is cut off there). It runs on the calling thread and needs nothing from the cooperative
+/// pool, so `secret-tool` store, lookup and clear finish even while every pool thread is busy.
 enum BlockingProcess {
     static func run(_ argv: [String], stdin: Data? = nil, environment: [String: String], timeout: Duration = .seconds(5)) throws -> ProcessResult {
-        try Blocking.run { try await ProcessRunner.run(argv, stdin: stdin, environment: environment, timeout: timeout, outputLimit: 64 * 1024) }
+        try ProcessRunner.runSync(argv, stdin: stdin, environment: environment, timeout: timeout, outputLimit: 64 * 1024)
     }
 }
 

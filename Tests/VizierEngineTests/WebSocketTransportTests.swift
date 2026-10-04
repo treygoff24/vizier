@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import VizierEngine
 
-@Suite struct WebSocketTransportTests {
+@Suite(.timeLimit(.minutes(1))) struct WebSocketTransportTests {
     typealias Provider = WebSocketTestServer.Provider
     private static let timeoutMs = 800
     // Exactly 100 ms of synthetic 16 kHz mono s16le, with enough energy to count as speech.

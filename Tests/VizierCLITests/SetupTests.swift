@@ -6,14 +6,17 @@ import VizierEngine
 
 private let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
-private func freeLoopbackPort() -> UInt16 {
+/// A loopback port held by a bound socket that is not listening yet: connecting to it is refused
+/// until `listen` is called on `fd`, and no other test can take the port meanwhile. (Closing a
+/// probe socket and binding the number again later raced the tests running beside it.)
+private func reservedLoopbackPort() -> (fd: Int32, port: UInt16) {
     let fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
-    defer { Glibc.close(fd) }
     var address = sockaddr_in()
     address.sin_family = sa_family_t(AF_INET); address.sin_addr.s_addr = UInt32(0x7f000001).bigEndian
     var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-    _ = withUnsafeMutablePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, length); getsockname(fd, $0, &length) } }
-    return UInt16(bigEndian: address.sin_port)
+    let named = withUnsafeMutablePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, length) == 0 && getsockname(fd, $0, &length) == 0 } }
+    precondition(fd >= 0 && named, "no loopback port could be reserved")
+    return (fd, UInt16(bigEndian: address.sin_port))
 }
 
 private func tempRoot() -> URL {
@@ -201,7 +204,7 @@ private func tempRoot() -> URL {
     @Test func localWhisperIsCheckedOnLoopbackWithAFixThatNamesTheServerAndTheModel() async throws {
         let root = tempRoot(); defer { try? FileManager.default.removeItem(at: root) }
         let bins = FakeBins()
-        let port = freeLoopbackPort()
+        let (listener, port) = reservedLoopbackPort(); defer { Glibc.close(listener) }
         let env = environment(root, bins: bins)
         try FileManager.default.createDirectory(at: env.configDirectory, withIntermediateDirectories: true)
         let url = "http://127.0.0.1:\(port)/v1/audio/transcriptions"
@@ -219,11 +222,7 @@ private func tempRoot() -> URL {
         let setup = await Setup.run(Setup.Options(), environment: env)
         #expect(checks(setup)["local_whisper"]?["status"] == .string("warn"))
         // Once something answers on that port the check passes.
-        let listener = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0); defer { Glibc.close(listener) }
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET); address.sin_addr.s_addr = UInt32(0x7f000001).bigEndian; address.sin_port = port.bigEndian
-        let bound = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(listener, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }
-        #expect(bound == 0 && listen(listener, 4) == 0)
+        #expect(listen(listener, 4) == 0)
         let up = Doctor.report(config: ConfigStore(directory: env.configDirectory), historyURL: root.appending(path: "h.sqlite"), takesRoot: root.appending(path: "t"), environment: env.variables)
         #expect(checks(up)["local_whisper"]?["status"] == .string("ok"))
     }
