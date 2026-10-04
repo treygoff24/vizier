@@ -2,7 +2,7 @@ import Foundation
 import Glibc
 
 /// `ydotool key` with raw evdev keycodes: it writes to /dev/uinput through `ydotoold`, so it
-/// works under any compositor, at the price of a daemon and uinput permission. Opt-in fallback.
+/// works under any compositor, at the price of a daemon and uinput permission. Default on COSMIC, opt-in fallback elsewhere.
 public struct YdotoolKeySender: KeySender {
     public let name = "ydotool"
     private let env: HelperEnvironment
@@ -49,7 +49,8 @@ public struct YdotoolKeySender: KeySender {
     /// The socket `ydotoold` listens on, as the client will be told to find it. YDOTOOL_SOCKET wins
     /// without a check (the probe reports it). Without it, ydotoold versions disagree on the
     /// default: some listen on `$XDG_RUNTIME_DIR/.ydotool_socket`, others on `/tmp/.ydotool_socket`,
-    /// and a client built for one never finds the other. The first of the two that is a live socket
+    /// and a client built for one never finds the other. Vizier checks its private
+    /// `$XDG_RUNTIME_DIR/vizier-input/socket` first, then those legacy defaults. The first live socket
     /// is used (the runtime dir first; a stale file or a non-socket there moves on to the next
     /// candidate), and `send` passes it to the client explicitly, so the mismatch cannot break the paste.
     static func socketPath(variables: [String: String], usable: (String) -> Bool = { socketState($0) == .live }) -> (path: String, explicit: Bool)? {
@@ -61,7 +62,10 @@ public struct YdotoolKeySender: KeySender {
 
     static func defaultCandidates(_ variables: [String: String]) -> [String] {
         var candidates: [String] = []
-        if let runtime = variables["XDG_RUNTIME_DIR"], !runtime.isEmpty { candidates.append(runtime + "/.ydotool_socket") }
+        if let runtime = variables["XDG_RUNTIME_DIR"], !runtime.isEmpty {
+            candidates.append(runtime + "/vizier-input/socket")
+            candidates.append(runtime + "/.ydotool_socket")
+        }
         candidates.append("/tmp/.ydotool_socket")
         return candidates
     }

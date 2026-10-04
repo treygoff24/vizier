@@ -41,3 +41,10 @@ Sparkle 2.10.0
   in the app bundle and uses it for automatic updates in release builds. Sparkle's
   license (MIT, with the licenses of its bundled external components) is
   reproduced in THIRD-PARTY-LICENSES.
+
+COSMIC protocols and Wayland protocols
+  https://github.com/pop-os/cosmic-protocols
+  https://gitlab.freedesktop.org/wayland/wayland-protocols
+  Sources/CCosmicFocus/protocols contains generated bindings, licensed under the
+  permissive notices reproduced in each generated file. Copyright belongs to the
+  upstream authors named there. Sources/CCosmicFocus/README.md records provenance.

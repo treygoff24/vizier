@@ -101,7 +101,7 @@ public enum LocalServers {
                 let port = target.url.port ?? 8738
                 let path = target.url.path.isEmpty ? "/v1/audio/transcriptions" : target.url.path
                 let detail = "Nothing answers at \(place), used by \(who); it needs whisper.cpp's whisper-server with the \(target.model) model (\(file))." + (binary == nil ? " whisper-server is not on PATH." : "")
-                let fix = "Build whisper.cpp (https://github.com/ggml-org/whisper.cpp) so whisper-server is on PATH; download the model: curl -L --create-dirs -o \(modelFolder)/\(file) https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(file) ; start it: whisper-server -m \(modelFolder)/\(file) --host 127.0.0.1 --port \(port) --inference-path \(path)"
+                let fix = "Build whisper.cpp (https://github.com/ggml-org/whisper.cpp) so whisper-server is on PATH; download the model: curl -L --create-dirs -o \(modelFolder)/\(file) https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(file) ; start it: whisper-server -m \(modelFolder)/\(file) --host 127.0.0.1 --port \(port) --inference-path \(path) --convert"
                 return Check(name: name, status: status, detail: detail, fix: fix)
             case .cleanup:
                 let detail = "Nothing answers at \(place), used by \(who) for cleanup; it needs an OpenAI-style chat server (for example llama.cpp's llama-server) serving the \(target.model) model."

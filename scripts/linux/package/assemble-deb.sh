@@ -11,6 +11,7 @@ install -Dm0644 /repo/Resources/linux/net.praxient.vizier.desktop "$root/usr/sha
 install -Dm0644 /repo/Resources/linux/vizier.service "$root/usr/lib/systemd/user/vizier.service"
 sed -i 's|@VIZIER_BIN@|/usr/bin/vizier|g' "$root/usr/lib/systemd/user/vizier.service"
 install -m0644 /repo/NOTICE /repo/LICENSE "$root/usr/share/doc/vizier/"
+install -m0644 /repo/Sources/CCosmicFocus/LICENSE "$root/usr/share/doc/vizier/COSMIC-PROTOCOL-LICENSES"
 cat > "$root/usr/share/doc/vizier/copyright" <<'EOF'
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Vizier

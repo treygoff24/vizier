@@ -31,7 +31,7 @@ public struct PastePlan: Sendable {
 public enum DesktopRoutes {
     /// The adapters this session can use, each probed: a tool that is installed but that the
     /// session cannot use (wtype on GNOME) is not in the list (A16: never choose by "installed").
-    /// `ydotool` is the opt-in fallback sender and comes last. Writers and senders are probed and
+    /// `ydotool` is the default on COSMIC; elsewhere it is an opt-in fallback and comes last. Writers and senders are probed and
     /// kept independently of each other.
     public static func make(session: DesktopSession, env: HelperEnvironment = HelperEnvironment(), allowYdotool: Bool = false) async -> PastePlan {
         var writers: [any ClipboardWriter] = []
@@ -43,11 +43,12 @@ public enum DesktopRoutes {
             senders = [XdotoolKeySender(env: env)]
         case .wayland:
             writers = [WlCopyClipboardWriter(session: session, env: env)]
-            senders = [WtypeKeySender(session: session, env: env)]
+            senders = session.family == .cosmic
+                ? [CosmicKeySender(env: env)] : [WtypeKeySender(session: session, env: env)]
         case .none:
             return PastePlan(writers: [], senders: [])
         }
-        if allowYdotool { senders.append(YdotoolKeySender(env: env)) }
+        if allowYdotool && !(session.display == .wayland && session.family == .cosmic) { senders.append(YdotoolKeySender(env: env)) }
         var usableWriters: [any ClipboardWriter] = []
         for writer in writers where await writer.probe().available { usableWriters.append(writer) }
         var usableSenders: [any KeySender] = []
@@ -87,7 +88,7 @@ public enum DesktopRoutes {
 ///   left on the clipboard.
 ///
 /// Weaker than macOS: there is no secure-field or secure-input check (Linux has no general
-/// equivalent), and the focused app is only known on X11, sway and Hyprland. The one check kept is
+/// equivalent), and the focused app is known on X11, sway, Hyprland and COSMIC (COSMIC supplies no PID). The one check kept is
 /// the focus move: when the pid was known at the stop and is known and different now, the paste
 /// is held (`PasteDecision.focusMoved`). If either pid is unknown, the paste goes ahead.
 @MainActor

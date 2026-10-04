@@ -7,7 +7,7 @@
 Vizier is a dictation app for macOS and Linux. Tap a key, talk, tap again, and clean text is pasted where your cursor is.
 
 - **macOS 27 or later, Apple Silicon:** a menu-bar app with a recording strip, a History window and Settings.
-- **Linux (x86_64):** a background daemon and the `vizier` command, with no window; `.deb` and AppImage packages. It is tested on X11 and Sway, and uses the desktop portal for GNOME and KDE. The portal flows have been tested against a mock, not yet on a real GNOME or KDE session. See [docs/linux.md](docs/linux.md).
+- **Linux (x86_64):** a background daemon and the `vizier` command, with no window; `.deb` and AppImage packages. It supports Pop!_OS COSMIC with automatic paste routing and desktop-specific setup, is tested on X11 and Sway, and uses the desktop portal for GNOME and KDE. The portal flows have been tested against a mock, not yet on a real GNOME or KDE session. See [docs/linux.md](docs/linux.md).
 
 ![The recording strip, showing live words while you talk](docs/images/strip.png)
 
@@ -89,7 +89,7 @@ scripts/build-app.sh      # produces build/Vizier.app, signed ad hoc
 open build/Vizier.app
 ```
 
-On Linux you need Swift 6.4 (installed with [swiftly](https://www.swift.org/install/linux/)). `swift build -c release --product vizier` produces `.build/release/vizier`. `scripts/linux/ci.sh` runs the Linux build and tests in a clean Docker container.
+On Linux you need Wayland development headers (`libwayland-dev` on Debian/Ubuntu) and Swift 6.4 (installed with [swiftly](https://www.swift.org/install/linux/)). `swift build -c release --product vizier` produces `.build/release/vizier`. `scripts/linux/ci.sh` runs the Linux build and tests in a clean Docker container.
 
 [docs/building.md](docs/building.md) explains signing, the install script, the Linux packages, and how a release is made. [CONTRIBUTING.md](CONTRIBUTING.md) has the contribution rules. To report a vulnerability, see [SECURITY.md](SECURITY.md).
 

@@ -1,7 +1,7 @@
 FROM debian:13
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends libwayland-dev \
         binutils git gnupg2 libc6-dev libcurl4-openssl-dev libedit2 \
         libgcc-14-dev libpython3-dev libsqlite3-dev libstdc++-14-dev \
         libxml2-dev libncurses-dev libz3-dev pkg-config tzdata zlib1g-dev unzip \

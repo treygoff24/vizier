@@ -216,6 +216,7 @@ private func tempRoot() -> URL {
         let whisper = try #require(checks(down)["local_whisper"])
         #expect(whisper["status"] == .string("fail"))  // the active mode's own engine is down
         let fix = try #require(whisper["fix"]?.string)
+        #expect(fix.contains("--convert"))
         #expect(fix.contains("whisper-server") && fix.contains("ggml-large-v3-turbo.bin") && fix.contains("--port \(port)") && fix.contains("huggingface.co/ggerganov/whisper.cpp"))
         #expect(down["healthy"] == .bool(false))
         // Setup reports the same server, but as a warning: it only reports what to start.

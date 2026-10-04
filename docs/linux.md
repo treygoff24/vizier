@@ -1,6 +1,6 @@
 # Vizier on Linux
 
-Vizier 0.2.0 is the first release with Linux support. It runs the same take engine as the Mac app. Tested end to end on X11 and on headless Sway; see [What is not verified](#what-is-not-verified) for what has not met a real desktop.
+Vizier 0.2.0 is the first release with Linux support. It runs the same take engine as the Mac app. Tested end to end on X11, headless Sway and Pop!_OS COSMIC; see [What is not verified](#what-is-not-verified) for what has not met a real desktop.
 
 ## What it is
 
@@ -22,11 +22,11 @@ The daemon does the work. Every other command (`vizier toggle`, `vizier status`,
 The packages are for x86_64 (amd64) Linux. Download one from the [release page](https://github.com/treygoff24/vizier/releases/latest). For release 0.2.0 the files are:
 
 - `vizier_0.2.0_amd64.deb`. Install it with `sudo apt install ./vizier_0.2.0_amd64.deb`. It installs `/usr/bin/vizier`, the sounds, the desktop entry and a systemd user unit, and pulls in the libraries it needs. The helper tools for audio, clipboard and pasting are recommended packages; see [Requirements](#requirements).
-- `Vizier-0.2.0-x86_64.AppImage`. Make it executable (`chmod +x`) and keep it somewhere permanent. It takes the same arguments as the `vizier` command (`./Vizier-0.2.0-x86_64.AppImage setup`), and setup points the service and desktop entry at that path. It uses your system's libraries (libcurl, SQLite, libsystemd) instead of bundling them.
+- `Vizier-0.2.0-x86_64.AppImage`. Make it executable (`chmod +x`) and keep it somewhere permanent. It takes the same arguments as the `vizier` command (`./Vizier-0.2.0-x86_64.AppImage setup`), and setup points the service and desktop entry at that path. It uses your system's libraries (libcurl, SQLite, libsystemd, libwayland-client) instead of bundling them.
 
 Later releases name their files the same way with their own version.
 
-To build from source, install Swift 6.4 with [swiftly](https://www.swift.org/install/linux/), then:
+To build from source, install the Wayland development headers (`sudo apt install libwayland-dev` on Debian/Ubuntu) and Swift 6.4 with [swiftly](https://www.swift.org/install/linux/), then:
 
 ```bash
 swift build -c release --product vizier
@@ -115,8 +115,9 @@ Vizier puts the text on the clipboard, checks that the clipboard still holds it,
 |---|---|---|
 | GNOME, KDE (Wayland) | The RemoteDesktop portal | The RemoteDesktop portal. You approve a consent dialog once, in `vizier setup`; the grant is remembered. |
 | Sway, niri, river, Hyprland and other wlroots (Wayland) | `wl-copy` (package `wl-clipboard`) | `wtype` |
+| Pop!_OS COSMIC (Wayland) | `wl-copy` | `ydotool`, selected automatically; see [COSMIC setup](#pop_os-cosmic) |
 | X11 | `xclip` or `xsel` | `xdotool` |
-| Any, opt-in | | `ydotool`, tried last, only when `VIZIER_YDOTOOL=1` is set in the daemon's environment |
+| Other desktops, opt-in | | `ydotool`, tried last, only when `VIZIER_YDOTOOL=1` is set in the daemon's environment |
 
 Install what your row names: for example `sudo apt install wl-clipboard wtype`, or `sudo apt install xclip xdotool`.
 
@@ -125,9 +126,132 @@ Install what your row names: for example `sudo apt install wl-clipboard wtype`, 
 Limits you should know:
 
 - **No password-field detection.** Linux has no general way to ask. Vizier will paste into a password box if the cursor is there.
-- **Focus.** Vizier knows which app is focused on X11, Sway and Hyprland. If that app changed between the stop and the paste, the paste is held. On other desktops it cannot tell.
+- **Focus.** Vizier knows which app is focused on X11, Sway and Hyprland. If that app changed between the stop and the paste, the paste is held. COSMIC supplies an app ID for terminal detection but no PID for this guard; keep the intended window focused until paste finishes. On other desktops it cannot tell.
 - **Held or failed pastes keep the text.** It stays on the clipboard if it got there, and `vizier last` always prints the last take's text. If the clipboard changed before the keys went out, nothing is sent.
 - **No paste keys, no problem.** With no usable sender, the text stays on the clipboard and the notification says so. Paste it yourself.
+
+## Pop!_OS COSMIC
+
+This integration is selected automatically for a Wayland session whose
+`XDG_CURRENT_DESKTOP` contains `COSMIC`. There is no `VIZIER_YDOTOOL` opt-in,
+PATH shim, or separate focus-helper installation. The native focus helper ships
+inside the Linux executable, including packages and AppImages.
+
+COSMIC can accept `wtype` and report success while producing incorrect keys.
+Vizier therefore uses `wl-copy` plus `ydotool` raw evdev paste chords. The bundled
+reader obtains the focused app ID through COSMIC's toplevel protocol: known
+terminals receive Ctrl+Shift+V; other apps receive Ctrl+V. If focus is unavailable,
+no keys are sent and the transcript remains on the clipboard for manual paste.
+The reader discards window titles and times out if the compositor stops answering.
+
+### Installation and first take
+
+1. Install a Vizier build containing this support, plus the capture, conversion
+   and clipboard tools:
+
+   ```bash
+   sudo apt install pipewire-bin ffmpeg wl-clipboard
+   ```
+
+2. Install **ydotool and ydotoold 1.0 or newer** together, where the user service
+   can find them (for example `/usr/local/bin`). Check `ydotool --version`.
+   Pop!_OS 24.04's Ubuntu package can be the older 0.1.8 release; that version
+   does not provide the daemon/socket interface used here. Follow
+   [ydotool's build instructions](https://github.com/ReimuNotMoe/ydotool#build).
+   The daemon needs this user to have read/write access to `/dev/uinput`.
+   Use an existing administrator-approved device rule or input group setup.
+   Input access permits keyboard injection; Vizier setup does not grant it,
+   run sudo, or change device/group permissions.
+
+3. From a terminal in COSMIC, run:
+
+   ```bash
+   vizier setup --autostart
+   ```
+
+   When no usable input socket exists and the helpers are installed, setup writes
+   `vizier-input.service` and a `vizier.service.d/cosmic-input.conf` dependency.
+   With device access and `--autostart`, it enables the input service and checks
+   socket readiness. Without `--autostart`, it only writes the files. The private
+   socket is `$XDG_RUNTIME_DIR/vizier-input/socket` (0600), inside a 0700 directory.
+   Existing user units are preserved. A running input service is reused;
+   `YDOTOOL_SOCKET` still takes precedence when explicitly configured.
+   Missing helpers, permissions or socket readiness produce a warning and leave
+   clipboard-only dictation available.
+
+4. In **COSMIC Settings → Input devices → Keyboard → Keyboard shortcuts → Custom**,
+   add the two commands printed by setup: **Ctrl+Alt+Space** runs the absolute
+   Vizier path followed by `toggle`; **Ctrl+Alt+Backspace** runs it with `cancel`.
+   Setup leaves existing keyboard bindings untouched. The AppImage instructions
+   use the persistent AppImage path, not its temporary mount.
+
+5. Start the [local speech server](#local-mode), focus a text field, press the
+   toggle chord, speak, and press it again. Local Whisper transcribes after stop.
+   This Linux integration provides notifications and sounds, not a live transcript
+   overlay. Stock libcurl 8.5 can handle this local batch route even though the
+   current doctor reports its separate live-cloud/WebSocket requirement as a failure.
+
+For the tested lightweight English setup, use `ggml-small.en-q5_1.bin` from
+[whisper.cpp's models](https://huggingface.co/ggerganov/whisper.cpp/tree/main), and
+edit the local mode's `transcriber.model` to `small.en-q5_1` in the file shown by
+`vizier config path`. Point `whisper-server -m` at that same file. This is an
+optional model choice; setup preserves existing config and the upstream default.
+
+### Optional NVIDIA acceleration, including GTX 1060
+
+Desktop support does not depend on a GPU. On the tested GTX 1060 6 GB, native
+whisper.cpp with CUDA 12.6 and explicit `sm_61` kernels worked; a recent PyTorch
+wheel on that machine did not include kernels for this card. No PyTorch package
+is needed. CUDA libraries can live beside the speech server so an existing Python
+installation and system NVIDIA driver remain unchanged.
+
+With a working driver and a CUDA 12.6 toolkit installed at a chosen path, build a
+separate server from whisper.cpp (tested commit
+`60c0be6ac8fa71b1a2ae2dd938a31a34a508e774`):
+
+```bash
+cmake -S whisper.cpp -B whisper.cpp/build-cuda \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+  -DWHISPER_BUILD_TESTS=OFF -DWHISPER_CURL=OFF \
+  -DGGML_CUDA=ON -DCUDAToolkit_ROOT=/path/to/cuda-12.6 \
+  -DCMAKE_CUDA_COMPILER=/path/to/cuda-12.6/bin/nvcc \
+  -DCMAKE_CUDA_ARCHITECTURES=61-real -DGGML_CUDA_FA_ALL_QUANTS=OFF
+cmake --build whisper.cpp/build-cuda --target whisper-server -j 4
+```
+
+`61-real` is specific to the GTX 1060's compute capability; select the architecture
+for your GPU using [NVIDIA's table](https://developer.nvidia.com/cuda/gpus/legacy).
+Keep the CPU binary and its service command. Launch the GPU binary on the same
+loopback endpoint, with the same model and `--convert`; ensure its CUDA shared
+libraries can be resolved, using a wrapper with a private `LD_LIBRARY_PATH` if
+needed. Do not run CPU and GPU servers on the same port simultaneously.
+For a user service, include `Restart=on-failure` and use `StandardOutput=null`
+and `StandardError=null` because whisper.cpp can print recognized words.
+Enable it under `graphical-session.target`. Stop dictation before changing speech
+backends, wait for the new server to answer, then resume. Roll back by restoring
+the preserved CPU server command and restarting that speech service.
+
+On one i7-8700K / GTX 1060 machine, synthetic 5-, 18- and 37-second English clips
+with `small.en-q5_1` took median 0.275, 0.487 and 0.895 seconds on GPU, versus
+2.853, 3.339 and 8.803 seconds on CPU (three requests per clip after warmup;
+CPU six threads, GPU two host threads). These are HTTP recognition times,
+including conversion, not recording or desktop paste time. Normalized CPU/GPU
+outputs matched on all nine requests. GPU memory use was about 515 MiB; the card
+returned to its previous idle power state between workloads. These measurements
+do not establish general accuracy, whole-system energy savings or fan noise.
+
+### Troubleshooting and rollback
+
+- `systemctl --user status vizier-input.service`: check device access and the
+  ydotool version if automatic paste is unavailable.
+- `vizier doctor --json`: check desktop detection, clipboard helpers and socket
+  availability. When focus cannot be read, paste the clipboard manually.
+- To remove setup's managed input service, first remove only
+  `~/.config/systemd/user/vizier.service.d/cosmic-input.conf`, then run
+  `systemctl --user disable --now vizier-input.service` and
+  `systemctl --user daemon-reload`. Remove its unit file only if setup created it;
+  preserve pre-existing input services. Remove the two shortcuts in COSMIC Settings.
+  Dictation can still leave text on the clipboard for manual paste.
 
 ## Local mode
 
@@ -143,8 +267,10 @@ Limits you should know:
 3. Start the server:
 
    ```bash
-   whisper-server -m ~/.local/share/vizier/models/ggml-large-v3-turbo.bin --host 127.0.0.1 --port 8738 --inference-path /v1/audio/transcriptions
+   whisper-server -m ~/.local/share/vizier/models/ggml-large-v3-turbo.bin --host 127.0.0.1 --port 8738 --inference-path /v1/audio/transcriptions --convert
    ```
+
+`--convert` enables FLAC input through ffmpeg; Vizier saves takes as FLAC. Install ffmpeg alongside the server.
 
 Vizier does not start this server for you. Run it under your own systemd user unit or session script if you want it always up. A mode that uses a local cleanup model needs an OpenAI-style chat server too (for example llama.cpp's `llama-server`); doctor prints the command.
 
@@ -229,5 +355,6 @@ This is the first Linux release, and parts of it have not met a real desktop.
 - The GNOME and KDE portal flows (consent, clipboard, paste keys) and the portal hotkey were tested against a mock of the portal, not a real GNOME or KDE session. Whether the chord appears and can be changed in the desktop's settings is unconfirmed.
 - Hyprland, river, niri and the other compositors were not run on a real session.
 - X11 and a headless Sway were tested end to end.
+- Pop!_OS 24.04 COSMIC was tested with a native Wayland GTK text field and Ghostty, using synthetic speech through a local GPU server. Cancellation inserted no text. A fresh login/reboot and the packaged AppImage were not exercised for this change.
 
 If something here does not match what your desktop does, `vizier doctor --json` and `vizier setup --json` give the details to report.

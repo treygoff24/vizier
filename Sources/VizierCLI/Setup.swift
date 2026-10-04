@@ -156,6 +156,8 @@ public enum Setup {
                  lines: ["Ctrl+Alt+Space { spawn \"\(executable)\" \"toggle\"; }", "Ctrl+Alt+BackSpace { spawn \"\(executable)\" \"cancel\"; }"]),
             Bind(desktop: "gnome", file: "Settings > Keyboard > Keyboard Shortcuts > Custom Shortcuts",
                  lines: ["Name: Vizier toggle   Command: \(bin) toggle   Shortcut: Ctrl+Alt+Space", "Name: Vizier cancel   Command: \(bin) cancel   Shortcut: Ctrl+Alt+Backspace"]),
+            Bind(desktop: "cosmic", file: "COSMIC Settings > Input devices > Keyboard > Keyboard shortcuts > Custom",
+                 lines: ["Name: Vizier toggle   Command: \(bin) toggle   Shortcut: Ctrl+Alt+Space", "Name: Vizier cancel   Command: \(bin) cancel   Shortcut: Ctrl+Alt+Backspace"]),
             Bind(desktop: "kde", file: "System Settings > Keyboard > Shortcuts > Add Command",
                  lines: ["Command: \(bin) toggle   Shortcut: Ctrl+Alt+Space", "Command: \(bin) cancel   Shortcut: Ctrl+Alt+Backspace"]),
         ]
@@ -167,7 +169,8 @@ public enum Setup {
         case .kde: ["kde"]
         case .hyprland: ["hyprland"]
         case .wlroots: ["sway", "niri"]
-        case .cosmic, .other: ["sway", "hyprland", "niri", "gnome", "kde"]
+        case .cosmic: ["cosmic"]
+        case .other: ["sway", "hyprland", "niri", "gnome", "kde"]
         }
     }
 
@@ -207,6 +210,12 @@ public enum Setup {
         add("capture", recorderPath == nil ? "fail" : "ok",
             recorderPath.map { "\(recorder[0]) found at \($0). Which microphone it records is the system default; that is not checked here." } ?? "\(recorder[0]) is not installed.",
             helpers.distro.install(["pipewire-bin"], names: [.fedora: ["pipewire-utils"], .arch: ["pipewire"], .suse: ["pipewire-tools"]]), essential: true)
+
+        if desktop.display == .wayland && desktop.family == .cosmic {
+            let input = await CosmicSetup.prepare(env: helpers,
+                directory: env.systemdUserDirectory ?? Self.systemdUserDirectory(env.variables), autostart: options.autostart)
+            add("cosmic_input", input.status, input.detail, CosmicSetup.fix)
+        }
 
         // Paste route.
         var portalDetail: JSONValue = .null

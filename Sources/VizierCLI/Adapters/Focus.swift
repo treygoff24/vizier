@@ -5,7 +5,7 @@ public enum TerminalList {
     public static let names: [String] = [
         "foot", "footclient", "kitty", "alacritty", "wezterm", "wezterm-gui", "gnome-terminal-server", "gnome-terminal",
         "org.gnome.terminal", "konsole", "xterm", "ptyxis", "ghostty", "tilix", "terminator", "xfce4-terminal",
-        "urxvt", "rxvt", "st", "st-256color", "cosmic-term", "lxterminal", "kgx", "sakura",
+        "urxvt", "rxvt", "st", "st-256color", "cosmic-term", "cosmicterm", "lxterminal", "kgx", "sakura",
     ]
 
     /// True when `identifier` names a terminal. Case-insensitive; a reverse-DNS app id
@@ -110,6 +110,7 @@ public enum FocusReaders {
     public static func make(for session: DesktopSession, env: HelperEnvironment = HelperEnvironment()) -> FocusReader {
         switch (session.display, session.family) {
         case (.x11, _): return X11FocusReader(env: env)
+        case (.wayland, .cosmic): return CosmicFocusReader(env: env)
         case (.wayland, .hyprland): return HyprlandFocusReader(env: env)
         case (.wayland, .wlroots):
             return env.variables["SWAYSOCK"] != nil ? SwayFocusReader(env: env) : UnknownFocusReader()

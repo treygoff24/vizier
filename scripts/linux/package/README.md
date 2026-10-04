@@ -29,7 +29,7 @@ The verified Swift 6.4 release statically includes Swift, Foundation, Dispatch,
 BlocksRuntime and ICU (including its data). There is no Swift toolchain or ICU
 runtime package dependency. CPipe2 is a header shim.
 
-ELF NEEDED: `libsqlite3.so.0`, `libcurl.so.4`, `libm.so.6`, `libstdc++.so.6`,
+ELF NEEDED: `libwayland-client.so.0`, `libsqlite3.so.0`, `libcurl.so.4`, `libm.so.6`, `libstdc++.so.6`,
 `libgcc_s.so.1`, `libc.so.6`, `ld-linux-x86-64.so.2`. Desktop D-Bus additionally
 loads `libsystemd.so.0` at runtime. TLS cloud engines need CA certificates.
 The complete recursive linkage of the build host is recorded in `out/ldd.txt`;
@@ -93,3 +93,7 @@ declaration was restored before the final green run.
   emits BIND_NOW without a GNU_RELRO segment. Appimagetool also warns that optional
   AppStream metadata is absent. Desktop portals and real audio remain unverified.
 - These files are Linux packaging only. There are no macOS-visible source edits.
+
+COSMIC support links libwayland-client into the Linux executable; `.deb` dependencies
+are discovered by `dpkg-shlibdeps`. Source builds also need `libwayland-dev`.
+AppImage hosts must supply the runtime library. See [COSMIC setup](../../../docs/linux.md#pop_os-cosmic).
