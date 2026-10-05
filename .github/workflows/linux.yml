@@ -18,13 +18,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Cache the expensive toolchain/dependency image, not a host Swift .build.
       # ci.sh still builds it, allowing Docker to reuse the restored layers.
       - name: Cache Linux CI image
         id: image-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .cache/vizier-linux-ci.tar.gz
           key: linux-ci-debian13-swift640-${{ runner.arch }}-${{ hashFiles('scripts/linux/ci/**') }}
