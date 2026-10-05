@@ -2,7 +2,7 @@ import Foundation
 import Glibc
 
 /// `ydotool key` with raw evdev keycodes: it writes to /dev/uinput through `ydotoold`, so it
-/// works under any compositor, at the price of a daemon and uinput permission. Opt-in fallback.
+/// works under any compositor, at the price of a daemon and uinput permission. Default on COSMIC, opt-in fallback elsewhere.
 public struct YdotoolKeySender: KeySender {
     public let name = "ydotool"
     private let env: HelperEnvironment
@@ -49,19 +49,29 @@ public struct YdotoolKeySender: KeySender {
     /// The socket `ydotoold` listens on, as the client will be told to find it. YDOTOOL_SOCKET wins
     /// without a check (the probe reports it). Without it, ydotoold versions disagree on the
     /// default: some listen on `$XDG_RUNTIME_DIR/.ydotool_socket`, others on `/tmp/.ydotool_socket`,
-    /// and a client built for one never finds the other. The first of the two that is a live socket
+    /// and a client built for one never finds the other. Vizier checks its private
+    /// `$XDG_RUNTIME_DIR/vizier-input/socket` first, then those legacy defaults. The first live socket
     /// is used (the runtime dir first; a stale file or a non-socket there moves on to the next
     /// candidate), and `send` passes it to the client explicitly, so the mismatch cannot break the paste.
-    static func socketPath(variables: [String: String], usable: (String) -> Bool = { socketState($0) == .live }) -> (path: String, explicit: Bool)? {
+    static func socketPath(variables: [String: String], usable: (String) -> Bool = { socketState($0) == .live },
+                           ownedByCurrentUser: (String) -> Bool = { socketOwnedByCurrentUser($0) }) -> (path: String, explicit: Bool)? {
         if let configured = variables["YDOTOOL_SOCKET"], !configured.isEmpty {
             return (configured, true)
         }
-        return defaultCandidates(variables).first(where: usable).map { ($0, false) }
+        return defaultCandidates(variables).first(where: { ($0 != "/tmp/.ydotool_socket" || ownedByCurrentUser($0)) && usable($0) }).map { ($0, false) }
+    }
+
+    static func socketOwnedByCurrentUser(_ path: String, currentUID: uid_t = getuid()) -> Bool {
+        var info = stat()
+        return stat(path, &info) == 0 && info.st_uid == currentUID
     }
 
     static func defaultCandidates(_ variables: [String: String]) -> [String] {
         var candidates: [String] = []
-        if let runtime = variables["XDG_RUNTIME_DIR"], !runtime.isEmpty { candidates.append(runtime + "/.ydotool_socket") }
+        if let runtime = variables["XDG_RUNTIME_DIR"], !runtime.isEmpty {
+            candidates.append(runtime + "/vizier-input/socket")
+            candidates.append(runtime + "/.ydotool_socket")
+        }
         candidates.append("/tmp/.ydotool_socket")
         return candidates
     }
@@ -70,7 +80,7 @@ public struct YdotoolKeySender: KeySender {
         guard env.resolve("ydotool") != nil else {
             return Helper.missing(name, tool: "ydotool", env: env)
         }
-        let fix = "start ydotoold (systemctl --user enable --now ydotool, or run `ydotoold` as a user in the input group); set YDOTOOL_SOCKET if it listens elsewhere"
+        let fix = "start ydotoold (systemctl --user enable --now ydotool, or run `ydotoold` as a user with access to /dev/uinput); set YDOTOOL_SOCKET if it listens elsewhere"
         guard let socket = Self.socketPath(variables: env.variables) else {
             return AdapterProbe(name: name, available: false,
                                 detail: "ydotoold is not running (no live socket at \(Self.defaultCandidates(env.variables).joined(separator: " or ")))",
@@ -88,7 +98,7 @@ public struct YdotoolKeySender: KeySender {
         case .denied:
             return AdapterProbe(name: name, available: false,
                                 detail: "the ydotoold socket \(socket.path) is not writable by this user",
-                                fix: "run ydotoold as your user (sudo usermod -aG input $USER, then log in again) or start it with --socket-own=$(id -u):$(id -g)")
+                                fix: "run ydotoold as your user with /dev/uinput access or start it with --socket-own=$(id -u):$(id -g)")
         }
     }
 
@@ -100,7 +110,10 @@ public struct YdotoolKeySender: KeySender {
         case .ctrlShiftV: events = ["\(c):1", "\(s):1", "\(v):1", "\(v):0", "\(s):0", "\(c):0"]
         }
         var variables = env.variables
-        if let socket = Self.socketPath(variables: variables) { variables["YDOTOOL_SOCKET"] = socket.path }
+        guard let socket = Self.socketPath(variables: variables), Self.socketState(socket.path) == .live else {
+            throw AdapterError("ydotoold socket is unavailable; paste the clipboard manually")
+        }
+        variables["YDOTOOL_SOCKET"] = socket.path
         try await Helper.send(["ydotool", "key"] + events, environment: variables)
     }
 }

@@ -6,8 +6,8 @@
 
 Vizier is a dictation app for macOS and Linux. Tap a key, talk, tap again, and clean text is pasted where your cursor is.
 
-- **macOS 27 or later, Apple Silicon:** a menu-bar app with a recording strip, a History window and Settings.
-- **Linux (x86_64):** a background daemon and the `vizier` command, with no window; `.deb` and AppImage packages. It is tested on X11 and Sway, and uses the desktop portal for GNOME and KDE. The portal flows have been tested against a mock, not yet on a real GNOME or KDE session. See [docs/linux.md](docs/linux.md).
+- **macOS 26 or later, Apple Silicon:** a menu-bar app with a recording strip, a History window and Settings.
+- **Linux (x86_64):** a background daemon and the `vizier` command, with no window; `.deb` and AppImage packages. It is tested on X11 and Sway, uses the desktop portal for GNOME and KDE, and supports Pop!_OS COSMIC with desktop-specific setup (automatic paste needs ydotool 1.0 or newer; without it, text stays on the clipboard). The portal flows have been tested against a mock, not yet on a real GNOME or KDE session. See [docs/linux.md](docs/linux.md).
 
 ![The recording strip, showing live words while you talk](docs/images/strip.png)
 
@@ -25,7 +25,7 @@ On the Mac, the default mode, Apple, runs entirely on your Mac and needs no acco
 2. Open it and drag Vizier to Applications.
 3. Open Vizier and follow the setup guide.
 
-Requirements: macOS 27 or later on Apple Silicon. Vizier runs from the menu bar and has no Dock icon unless a window is open or you turn on Show in Dock.
+Requirements: macOS 26 or later on Apple Silicon. Vizier runs from the menu bar and has no Dock icon unless a window is open or you turn on Show in Dock.
 
 ### Linux
 
@@ -80,7 +80,7 @@ The common problems are a lost Accessibility grant, a missing Apple speech model
 
 ## Build from source
 
-On the Mac you need macOS 27 or later on Apple Silicon, and Xcode 27 or later (Swift 6.2+).
+On the Mac you need Xcode or the Command Line Tools with Swift 6.2 or later. The app runs on macOS 26 or later, on Apple Silicon. Build with the macOS 27 SDK (Xcode 27) to include the macOS 27 menu bar integration; [docs/building.md](docs/building.md) explains the difference.
 
 ```bash
 swift build
@@ -89,7 +89,7 @@ scripts/build-app.sh      # produces build/Vizier.app, signed ad hoc
 open build/Vizier.app
 ```
 
-On Linux you need Swift 6.4 (installed with [swiftly](https://www.swift.org/install/linux/)). `swift build -c release --product vizier` produces `.build/release/vizier`. `scripts/linux/ci.sh` runs the Linux build and tests in a clean Docker container.
+On Linux you need Wayland development headers (`libwayland-dev` on Debian/Ubuntu) and Swift 6.4 (installed with [swiftly](https://www.swift.org/install/linux/)). `swift build -c release --product vizier` produces `.build/release/vizier`. `scripts/linux/ci.sh` runs the Linux build and tests in a clean Docker container.
 
 [docs/building.md](docs/building.md) explains signing, the install script, the Linux packages, and how a release is made. [CONTRIBUTING.md](CONTRIBUTING.md) has the contribution rules. To report a vulnerability, see [SECURITY.md](SECURITY.md).
 

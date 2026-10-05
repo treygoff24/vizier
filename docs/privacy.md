@@ -60,3 +60,18 @@ Vizier asks for Microphone access (to record) and Accessibility access (to see y
 ## Reporting a vulnerability
 
 Use GitHub's private vulnerability reporting, described in [SECURITY.md](../SECURITY.md).
+
+## Linux COSMIC integration
+
+On COSMIC, automatic paste uses ydotoold's keyboard-injection access to
+`/dev/uinput`. `vizier setup` can install a per-user input service with a private
+0700 runtime directory and 0600 socket; it does not grant device permissions or
+change group membership. `--autostart` enables the service when access is already
+available. A compatible existing input daemon is reused.
+
+The bundled focus reader queries COSMIC window metadata, discards titles, and
+returns only the active app ID to Vizier for terminal paste-key selection. It
+runs as a short-lived subprocess and does not retain the window list. The app ID
+can appear in the existing take history as the frontmost app. Neither this reader
+nor the input service sends network traffic. Local Whisper sends audio only to the
+configured loopback server. Downloading its model is a separate installation step. See [Linux setup](linux.md#pop_os-cosmic).

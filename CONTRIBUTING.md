@@ -1,6 +1,6 @@
 # Contributing
 
-Vizier is written in Swift. It is a native macOS app (macOS 27 or later on Apple Silicon, Xcode 27 or later with Swift 6.2+) and a Linux daemon and command, `vizier` (Swift 6.4), both built on the shared `VizierEngine` library.
+Vizier is written in Swift. It is a native macOS app (runs on macOS 26 or later on Apple Silicon; builds with Swift 6.2 or later, and releases use Xcode 27 for the macOS 27 SDK) and a Linux daemon and command, `vizier` (Swift 6.4), both built on the shared `VizierEngine` library.
 
 ## Build and test
 

@@ -6,7 +6,7 @@ FROM debian:13
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         xvfb xdotool xclip xsel x11-utils python3 python3-tk espeak-ng ffmpeg \
-        libsqlite3-0 libcurl4t64 libstdc++6 libxml2 libncurses6 libedit2 zlib1g libgcc-s1 \
+        libwayland-client0 libsqlite3-0 libcurl4t64 libstdc++6 libxml2 libncurses6 libedit2 zlib1g libgcc-s1 \
         fonts-dejavu-core procps ca-certificates curl git cmake build-essential \
     && rm -rf /var/lib/apt/lists/*
 ARG WHISPER_TAG=v1.9.4

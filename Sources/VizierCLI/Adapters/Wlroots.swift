@@ -62,6 +62,11 @@ public struct WtypeKeySender: KeySender {
     }
 
     public func probe() async -> AdapterProbe {
+        if session.family == .cosmic {
+            return AdapterProbe(name: name, available: false,
+                                detail: "COSMIC can accept wtype but emit incorrect keycodes; use ydotool instead",
+                                fix: CosmicSetup.fix)
+        }
         guard env.resolve("wtype") != nil else { return Helper.missing(name, tool: "wtype", env: env) }
         if let missing = waylandMissing(name, env: env) { return missing }
         switch session.family {

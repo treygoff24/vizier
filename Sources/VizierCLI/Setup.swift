@@ -156,6 +156,8 @@ public enum Setup {
                  lines: ["Ctrl+Alt+Space { spawn \"\(executable)\" \"toggle\"; }", "Ctrl+Alt+BackSpace { spawn \"\(executable)\" \"cancel\"; }"]),
             Bind(desktop: "gnome", file: "Settings > Keyboard > Keyboard Shortcuts > Custom Shortcuts",
                  lines: ["Name: Vizier toggle   Command: \(bin) toggle   Shortcut: Ctrl+Alt+Space", "Name: Vizier cancel   Command: \(bin) cancel   Shortcut: Ctrl+Alt+Backspace"]),
+            Bind(desktop: "cosmic", file: "COSMIC Settings > Input devices > Keyboard > Keyboard shortcuts > Custom",
+                 lines: ["Name: Vizier toggle   Command: \(bin) toggle   Shortcut: Ctrl+Alt+Space", "Name: Vizier cancel   Command: \(bin) cancel   Shortcut: Ctrl+Alt+Backspace"]),
             Bind(desktop: "kde", file: "System Settings > Keyboard > Shortcuts > Add Command",
                  lines: ["Command: \(bin) toggle   Shortcut: Ctrl+Alt+Space", "Command: \(bin) cancel   Shortcut: Ctrl+Alt+Backspace"]),
         ]
@@ -167,7 +169,8 @@ public enum Setup {
         case .kde: ["kde"]
         case .hyprland: ["hyprland"]
         case .wlroots: ["sway", "niri"]
-        case .cosmic, .other: ["sway", "hyprland", "niri", "gnome", "kde"]
+        case .cosmic: ["cosmic"]
+        case .other: ["sway", "hyprland", "niri", "gnome", "kde"]
         }
     }
 
@@ -208,6 +211,12 @@ public enum Setup {
             recorderPath.map { "\(recorder[0]) found at \($0). Which microphone it records is the system default; that is not checked here." } ?? "\(recorder[0]) is not installed.",
             helpers.distro.install(["pipewire-bin"], names: [.fedora: ["pipewire-utils"], .arch: ["pipewire"], .suse: ["pipewire-tools"]]), essential: true)
 
+        if desktop.display == .wayland && desktop.family == .cosmic {
+            let input = await CosmicSetup.prepare(env: helpers,
+                directory: env.systemdUserDirectory ?? Self.systemdUserDirectory(env.variables), autostart: options.autostart)
+            add("cosmic_input", input.status, input.detail, CosmicSetup.fix)
+        }
+
         // Paste route.
         var portalDetail: JSONValue = .null
         var plan = await DesktopRoutes.make(session: desktop, env: helpers, allowYdotool: env.variables["VIZIER_YDOTOOL"] == "1")
@@ -224,6 +233,10 @@ public enum Setup {
             }
         }
         let writerNames = plan.writers.map(\.name), senderNames = plan.senders.map(\.name)
+        var cosmicSender: AdapterProbe?
+        if desktop.display == .wayland && desktop.family == .cosmic, let kept = plan.senders.first(where: { $0.name == "ydotool-cosmic" }) {
+            cosmicSender = await kept.probe()
+        }
         if plan.writers.isEmpty {
             if desktop.display == .none {
                 add("clipboard", "fail", "No graphical session was detected, so no clipboard tool applies.", "Run vizier setup from a terminal inside your desktop session.", essential: true)
@@ -242,6 +255,10 @@ public enum Setup {
             let sender = probes.filter { $0.name.contains("wtype") || $0.name.contains("xdotool") || $0.name.contains("ydotool") }
             add("paste", "warn", "No way to press the paste keys here, so a take leaves its text on the clipboard. " + sender.map { "\($0.name): \($0.detail)" }.joined(separator: "; "),
                 sender.compactMap(\.fix).first ?? "Install wtype (Wayland) or xdotool (X11); on GNOME/KDE run vizier setup from a terminal in the session.")
+        } else if let kept = cosmicSender, !kept.available {
+            // On COSMIC the plan keeps its sender even with no live socket, so "senders exist" proves nothing here.
+            add("paste", "warn", "Paste keys will go through \(senderNames.joined(separator: ", ")) once its socket is live; until then a take leaves its text on the clipboard.",
+                kept.fix ?? CosmicSetup.fix)
         } else {
             add("paste", "ok", "Paste keys are sent with \(senderNames.joined(separator: ", ")). Unverified until a take lands in an app on this desktop.")
         }

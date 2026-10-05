@@ -163,7 +163,7 @@ public final class AppleSpeechTranscriber: LiveTranscriber, @unchecked Sendable 
         let transcriber = SpeechTranscriber(locale: supported, preset: .progressiveTranscription)
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         lock.withLock { self.analyzer = analyzer }
-        let converter = try await AnalyzerInputConverter.converter(compatibleWith: [transcriber])
+        let converter = try await AnalyzerBufferConverter.converter(from: Self.pcmFormat, compatibleWith: [transcriber])
         let (inputs, inputsIn) = AsyncStream.makeStream(of: AnalyzerInput.self, bufferingPolicy: .unbounded)
         try await analyzer.start(inputSequence: inputs)
 
@@ -176,7 +176,7 @@ public final class AppleSpeechTranscriber: LiveTranscriber, @unchecked Sendable 
             for await chunk in audio {
                 try Task.checkCancellation()
                 guard let buffer = Self.buffer(from: chunk, format: format) else { continue }
-                for input in try converter.convert(buffer, at: nil) { inputsIn.yield(input) }
+                for input in try converter.convert(buffer) { inputsIn.yield(input) }
             }
             for input in try converter.flush() { inputsIn.yield(input) }
             inputsIn.finish()

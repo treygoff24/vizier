@@ -2,6 +2,12 @@
 
 Notable changes to Vizier, newest first. Versions follow `VERSION`.
 
+## Unreleased
+
+### Changed
+
+- On Linux, a nonzero exit from `xdotool`, `wtype` or `ydotool` now reports a failed paste (`failed-key-helper`) instead of success. Before, a helper that ran but failed left the take marked as pasted.
+
 ## 0.2.0 (2026-10-03)
 
 Linux support, released together with the macOS app. The release page carries the notarized Mac DMG (with its Sparkle update) and the Linux `.deb` and AppImage.

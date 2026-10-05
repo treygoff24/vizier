@@ -197,7 +197,7 @@ import Testing
         // Both usable: the runtime dir first.
         #expect(YdotoolKeySender.socketPath(variables: ["XDG_RUNTIME_DIR": "/run/user/1000"], usable: both)?.path == "/run/user/1000/.ydotool_socket")
         // Only the /tmp one is usable (ydotoold built for the old default, or a stale file in the runtime dir): found anyway.
-        #expect(YdotoolKeySender.socketPath(variables: ["XDG_RUNTIME_DIR": "/run/user/1000"], usable: { $0 == "/tmp/.ydotool_socket" })?.path == "/tmp/.ydotool_socket")
+        #expect(YdotoolKeySender.socketPath(variables: ["XDG_RUNTIME_DIR": "/run/user/1000"], usable: { $0 == "/tmp/.ydotool_socket" }, ownedByCurrentUser: { _ in true })?.path == "/tmp/.ydotool_socket")
         #expect(YdotoolKeySender.socketPath(variables: ["XDG_RUNTIME_DIR": "/run/user/1000"], usable: { _ in false }) == nil)
     }
 

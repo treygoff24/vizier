@@ -1,6 +1,6 @@
 # Vizier on Linux
 
-Vizier 0.2.0 is the first release with Linux support. It runs the same take engine as the Mac app. Tested end to end on X11 and on headless Sway; see [What is not verified](#what-is-not-verified) for what has not met a real desktop.
+Vizier 0.2.0 is the first release with Linux support. It runs the same take engine as the Mac app. Tested end to end on X11 and headless Sway, with contributor testing on Pop!_OS COSMIC; see [What is not verified](#what-is-not-verified) for what has not met a real desktop.
 
 ## What it is
 
@@ -10,6 +10,7 @@ The daemon does the work. Every other command (`vizier toggle`, `vizier status`,
 
 ## Requirements
 
+- libwayland-client is required by the Linux executable on every desktop, including headless operation and AppImage hosts.
 - A microphone, and PipeWire or PulseAudio. Vizier records with `pw-record`, or `parec` if that is all you have. On Debian and Ubuntu: `sudo apt install pipewire-bin`.
 - For the live cloud modes (Scribe, Gemini live), libcurl 8.11 or later. Debian 13 and Ubuntu 25.04 and later have it. On an older distro the batch engines still work and `vizier doctor` fails the `libcurl` check.
 - One speech route:
@@ -22,11 +23,11 @@ The daemon does the work. Every other command (`vizier toggle`, `vizier status`,
 The packages are for x86_64 (amd64) Linux. Download one from the [release page](https://github.com/treygoff24/vizier/releases/latest). For release 0.2.0 the files are:
 
 - `vizier_0.2.0_amd64.deb`. Install it with `sudo apt install ./vizier_0.2.0_amd64.deb`. It installs `/usr/bin/vizier`, the sounds, the desktop entry and a systemd user unit, and pulls in the libraries it needs. The helper tools for audio, clipboard and pasting are recommended packages; see [Requirements](#requirements).
-- `Vizier-0.2.0-x86_64.AppImage`. Make it executable (`chmod +x`) and keep it somewhere permanent. It takes the same arguments as the `vizier` command (`./Vizier-0.2.0-x86_64.AppImage setup`), and setup points the service and desktop entry at that path. It uses your system's libraries (libcurl, SQLite, libsystemd) instead of bundling them.
+- `Vizier-0.2.0-x86_64.AppImage`. Make it executable (`chmod +x`) and keep it somewhere permanent. It takes the same arguments as the `vizier` command (`./Vizier-0.2.0-x86_64.AppImage setup`), and setup points the service and desktop entry at that path. It uses your system's libraries (libcurl, SQLite, libsystemd, libwayland-client) instead of bundling them.
 
 Later releases name their files the same way with their own version.
 
-To build from source, install Swift 6.4 with [swiftly](https://www.swift.org/install/linux/), then:
+To build from source, install the Wayland development headers (`sudo apt install libwayland-dev` on Debian/Ubuntu) and Swift 6.4 with [swiftly](https://www.swift.org/install/linux/), then:
 
 ```bash
 swift build -c release --product vizier
@@ -115,19 +116,96 @@ Vizier puts the text on the clipboard, checks that the clipboard still holds it,
 |---|---|---|
 | GNOME, KDE (Wayland) | The RemoteDesktop portal | The RemoteDesktop portal. You approve a consent dialog once, in `vizier setup`; the grant is remembered. |
 | Sway, niri, river, Hyprland and other wlroots (Wayland) | `wl-copy` (package `wl-clipboard`) | `wtype` |
+| Pop!_OS COSMIC (Wayland) | `wl-copy` | `ydotool`, selected automatically; see [COSMIC setup](#pop_os-cosmic) |
 | X11 | `xclip` or `xsel` | `xdotool` |
-| Any, opt-in | | `ydotool`, tried last, only when `VIZIER_YDOTOOL=1` is set in the daemon's environment |
+| Other desktops, opt-in | | `ydotool`, tried last, only when `VIZIER_YDOTOOL=1` is set in the daemon's environment |
 
 Install what your row names: for example `sudo apt install wl-clipboard wtype`, or `sudo apt install xclip xdotool`.
 
-**ydotool** types through the kernel's uinput device. It needs `ydotoold` running and a socket your user can write to. Setup suggests `systemctl --user enable --now ydotool`, or running `ydotoold` as a user in the `input` group (`sudo usermod -aG input $USER`, then log in again). If it listens on a non-default socket, set `YDOTOOL_SOCKET`. Use it when `wtype` does not work on your compositor and you accept a daemon with keyboard-injection rights.
+**ydotool** types through the kernel's uinput device. It needs `ydotoold` running and a socket your user can write to. Setup suggests `systemctl --user enable --now ydotool`, or running `ydotoold` as a user who can open `/dev/uinput`. Give that access with a `/dev/uinput`-only `uaccess` udev rule, as in step 2 of the [COSMIC setup](#pop_os-cosmic), and avoid the `input` group, which also permits reading keyboard event devices. If it listens on a non-default socket, set `YDOTOOL_SOCKET`. Use it when `wtype` does not work on your compositor and you accept a daemon with keyboard-injection rights.
 
 Limits you should know:
 
 - **No password-field detection.** Linux has no general way to ask. Vizier will paste into a password box if the cursor is there.
-- **Focus.** Vizier knows which app is focused on X11, Sway and Hyprland. If that app changed between the stop and the paste, the paste is held. On other desktops it cannot tell.
+- **Focus.** Vizier knows which app is focused on X11, Sway and Hyprland. If that app changed between the stop and the paste, the paste is held. COSMIC supplies an app ID for terminal detection but no PID for this guard; keep the intended window focused until paste finishes. On other desktops it cannot tell.
 - **Held or failed pastes keep the text.** It stays on the clipboard if it got there, and `vizier last` always prints the last take's text. If the clipboard changed before the keys went out, nothing is sent.
 - **No paste keys, no problem.** With no usable sender, the text stays on the clipboard and the notification says so. Paste it yourself.
+
+## Pop!_OS COSMIC
+
+This integration is selected automatically for a Wayland session where
+the first recognized desktop family in `XDG_CURRENT_DESKTOP` is `COSMIC`. There is no `VIZIER_YDOTOOL` opt-in,
+PATH shim, or separate focus-helper installation. The native focus helper ships
+inside the Linux executable, including packages and AppImages.
+
+COSMIC can accept `wtype` and report success while producing incorrect keys.
+Vizier therefore uses `wl-copy` plus `ydotool` raw evdev paste chords. The bundled
+reader obtains the focused app ID through COSMIC's toplevel protocol: known
+terminals receive Ctrl+Shift+V; other apps receive Ctrl+V. If focus is unavailable,
+no keys are sent and the transcript remains on the clipboard for manual paste.
+The reader discards window titles and times out if the compositor stops answering.
+
+### Installation and first take
+
+1. Install a Vizier build containing this support, plus the capture, conversion
+   and clipboard tools:
+
+   ```bash
+   sudo apt install pipewire-bin ffmpeg wl-clipboard
+   ```
+
+2. Install **ydotool and ydotoold 1.0 or newer** together, where the user service
+   can find them (for example `/usr/local/bin`). Check `ydotool --version`.
+   Pop!_OS 24.04 ships ydotool 0.1.8; users must build ydotool 1.0 or newer
+   because 0.1.8 lacks the daemon/socket interface used here. Follow
+   [ydotool's build instructions](https://github.com/ReimuNotMoe/ydotool#build).
+   The daemon needs this user to have read/write access to `/dev/uinput`.
+   Ask an administrator for a `/dev/uinput`-only udev rule, such as
+   `KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess"`, for the active local session.
+   Avoid the `input` group: it also permits reading keyboard event devices.
+   Input access permits keyboard injection; Vizier setup does not grant it,
+   run sudo, or change device/group permissions.
+
+3. From a terminal in COSMIC, run:
+
+   ```bash
+   vizier setup --autostart
+   ```
+
+   When no usable input socket exists and the helpers are installed, setup writes
+   `vizier-input.service`. With device access and `--autostart`, it enables the
+   input service, checks socket readiness, and only then writes the
+   `vizier.service.d/cosmic-input.conf` dependency. Without `--autostart`, it
+   writes only the input unit and does not start it. The private
+   socket is `$XDG_RUNTIME_DIR/vizier-input/socket` (0600), inside a 0700 directory.
+   Existing user units are preserved. A running input service is reused;
+   `YDOTOOL_SOCKET` still takes precedence when explicitly configured.
+   Missing helpers, permissions or socket readiness produce a warning and leave
+   clipboard-only dictation available.
+
+4. In **COSMIC Settings → Input devices → Keyboard → Keyboard shortcuts → Custom**,
+   add the two commands printed by setup: **Ctrl+Alt+Space** runs the absolute
+   Vizier path followed by `toggle`; **Ctrl+Alt+Backspace** runs it with `cancel`.
+   Setup leaves existing keyboard bindings untouched. The AppImage instructions
+   use the persistent AppImage path, not its temporary mount.
+
+5. Start the [local speech server](#local-mode), focus a text field, press the
+   toggle chord, speak, and press it again. Local Whisper transcribes after stop.
+   This Linux integration provides notifications and sounds, not a live transcript
+   overlay.
+
+### Troubleshooting and rollback
+
+- `systemctl --user status vizier-input.service`: check device access and the
+  ydotool version if automatic paste is unavailable.
+- `vizier doctor --json`: check desktop detection, clipboard helpers and socket
+  availability. When focus cannot be read, paste the clipboard manually.
+- To remove setup's managed input service, first remove only
+  `~/.config/systemd/user/vizier.service.d/cosmic-input.conf`, then run
+  `systemctl --user disable --now vizier-input.service` and
+  `systemctl --user daemon-reload`. Remove its unit file only if setup created it;
+  preserve pre-existing input services. Remove the two shortcuts in COSMIC Settings.
+  Dictation can still leave text on the clipboard for manual paste.
 
 ## Local mode
 
@@ -145,6 +223,8 @@ Limits you should know:
    ```bash
    whisper-server -m ~/.local/share/vizier/models/ggml-large-v3-turbo.bin --host 127.0.0.1 --port 8738 --inference-path /v1/audio/transcriptions
    ```
+
+Current whisper.cpp decodes Vizier's FLAC uploads in memory; do not add `--convert`.
 
 Vizier does not start this server for you. Run it under your own systemd user unit or session script if you want it always up. A mode that uses a local cleanup model needs an OpenAI-style chat server too (for example llama.cpp's `llama-server`); doctor prints the command.
 
@@ -229,5 +309,6 @@ This is the first Linux release, and parts of it have not met a real desktop.
 - The GNOME and KDE portal flows (consent, clipboard, paste keys) and the portal hotkey were tested against a mock of the portal, not a real GNOME or KDE session. Whether the chord appears and can be changed in the desktop's settings is unconfirmed.
 - Hyprland, river, niri and the other compositors were not run on a real session.
 - X11 and a headless Sway were tested end to end.
+- Pop!_OS 24.04 COSMIC was tested with a native Wayland GTK text field and Ghostty, using synthetic speech through a local GPU server. Cancellation inserted no text. A fresh login/reboot and the packaged AppImage were not exercised for this change.
 
 If something here does not match what your desktop does, `vizier doctor --json` and `vizier setup --json` give the details to report.

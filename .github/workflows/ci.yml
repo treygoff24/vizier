@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build-and-test:
-    # GitHub's public-preview macOS 27 arm64 image; Vizier targets macOS 27 (Package.swift).
+    # GitHub's public-preview macOS 27 arm64 image; Vizier targets macOS 26 or later (Package.swift).
     runs-on: xcode-27
     timeout-minutes: 45
     steps:
@@ -34,3 +34,26 @@ jobs:
 
       - name: Test
         run: swift test
+
+  macos-26:
+    # GitHub's generally available macOS 26 arm64 image, with the macOS 26 SDK. It checks that the app builds
+    # against the 26 SDK (the macOS 27 menu bar code is compiled out there) and runs the Apple speech tests on 26.
+    # The xcode-27 job above stays the full suite.
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache .build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: build-macos26-${{ runner.arch }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: |
+            build-macos26-${{ runner.arch }}-
+
+      - name: Build
+        run: swift build
+
+      - name: Test the Apple speech path
+        run: swift test --filter 'AnalyzerBufferConverter|AppleSpeech'

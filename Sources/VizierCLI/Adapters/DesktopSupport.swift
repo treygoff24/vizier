@@ -17,6 +17,11 @@ public protocol ClipboardReadable: ClipboardWriter {
     func readBack(maxBytes: Int) async -> String?
 }
 
+/// The helper ran and may have emitted keys. Never retry another injector.
+struct KeyDeliveryError: Error, CustomStringConvertible {
+    let description: String
+}
+
 enum Helper {
     /// Pauses between readback attempts after a publish; the first read is immediate. A server
     /// that forked takes the selection within a few milliseconds, so this is a bound, not a wait.
@@ -69,13 +74,13 @@ enum Helper {
         if helper.stillRunning { _ = kill(helper.pid, SIGTERM) }
     }
 
-    /// Runs a key-sending helper. Throws only when no key can have gone out: the helper could not be
-    /// spawned. Any result after a successful spawn (non-zero exit, a signal, the deadline) returns:
-    /// a helper that wrote some events before failing may have delivered the chord, and the caller
-    /// must never invite a second injector for a paste that may have landed (A16).
+    /// Reports unsuccessful helpers without allowing a second injector to retry partial keys.
     static func send(_ argv: [String], environment: [String: String], timeout: Duration = .seconds(3)) async throws {
         do {
-            _ = try await ProcessRunner.run(argv, environment: environment, timeout: timeout, outputLimit: 8 * 1024)
+            let result = try await ProcessRunner.run(argv, environment: environment, timeout: timeout, outputLimit: 8 * 1024)
+            guard result.succeeded else { throw KeyDeliveryError(description: "\(argv[0]) failed after starting; paste may have partially landed") }
+        } catch let error as KeyDeliveryError {
+            throw error
         } catch {
             throw AdapterError("\(argv[0]): \(error)")
         }

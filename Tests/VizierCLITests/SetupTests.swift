@@ -99,6 +99,36 @@ private func tempRoot() -> URL {
         #expect(failed["autostart"]?["error"]?.string?.contains("Failed to connect to bus") == false, "systemctl's stderr must not reach the output")
     }
 
+    @Test func onCosmicThePasteLineWarnsUntilTheInputSocketIsLive() async throws {
+        let root = tempRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let bins = FakeBins()
+        bins.add("pw-record", reads: false); bins.add("ydotool", reads: false)
+        bins.addClipboardTool("wl-copy"); bins.addClipboardReader()
+        let cosmic = DesktopSession(display: .wayland, family: .cosmic, currentDesktop: "COSMIC")
+        func paste(socket: String) async -> JSONValue? {
+            let environment = Setup.Environment(
+                variables: bins.environment(["WAYLAND_DISPLAY": "wayland-test", "XDG_CURRENT_DESKTOP": "COSMIC", "YDOTOOL_SOCKET": socket,
+                                             "XDG_DATA_HOME": root.appending(path: "datahome").path]),
+                configDirectory: root.appending(path: "config"), dataDirectory: root.appending(path: "data"),
+                executable: "/opt/vizier", systemdUserDirectory: root.appending(path: "systemd/user"),
+                desktop: cosmic, useSecretService: false, distro: .debian,
+                packagedUnitDirectories: [], systemApplicationDirectories: [])
+            return checks(await Setup.run(Setup.Options(), environment: environment))["paste"]
+        }
+        // COSMIC keeps its sender in the plan even when nothing is listening, so the plan alone must not read as "ok".
+        let missing = await paste(socket: bins.directory + "/missing.sock")
+        #expect(missing?["status"] == .string("warn"))
+        #expect(missing?["detail"]?.string?.contains("once its socket is live") == true)
+        #expect(missing?["detail"]?.string?.contains("clipboard") == true)
+        #expect(missing?["fix"]?.string?.isEmpty == false)
+        let socket = SocketFixture(in: bins.directory, name: "live.sock")
+        let live = await paste(socket: socket.path)
+        #expect(live?["status"] == .string("ok"))
+        #expect(live?["detail"]?.string?.contains("Paste keys are sent with ydotool-cosmic") == true)
+        #expect(bins.argv("ydotool").isEmpty, "setup must not type")
+        withExtendedLifetime(socket) {}
+    }
+
     @Test func autostartImportsOnlyTheNamedDesktopVariablesBeforeEnablingTheUnit() async throws {
         let root = tempRoot(); defer { try? FileManager.default.removeItem(at: root) }
         let bins = FakeBins()
@@ -216,6 +246,7 @@ private func tempRoot() -> URL {
         let whisper = try #require(checks(down)["local_whisper"])
         #expect(whisper["status"] == .string("fail"))  // the active mode's own engine is down
         let fix = try #require(whisper["fix"]?.string)
+        #expect(!fix.contains("--convert"))
         #expect(fix.contains("whisper-server") && fix.contains("ggml-large-v3-turbo.bin") && fix.contains("--port \(port)") && fix.contains("huggingface.co/ggerganov/whisper.cpp"))
         #expect(down["healthy"] == .bool(false))
         // Setup reports the same server, but as a warning: it only reports what to start.

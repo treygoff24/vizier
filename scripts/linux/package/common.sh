@@ -9,6 +9,7 @@ OUT=${OUT:-$PACKAGE_DIR/out}
 mkdir -p "$OUT"
 OUT=$(cd -- "$OUT" && pwd)
 if [[ -z ${VIZIER_BINARY:-} ]]; then
+    [[ -f /usr/include/wayland-client.h ]] || { echo 'Install libwayland-dev on the build host before building' >&2; exit 1; }
     # Swift 6.4's swiftbuild backend omits CoreFoundation/_CFURLSessionInterface
     # when statically linking Foundation. Native SwiftPM supplies those archives.
     # shellcheck disable=SC1091

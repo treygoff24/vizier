@@ -6,8 +6,9 @@ Vizier builds on two platforms from one package: the macOS app, and the Linux `v
 
 **macOS (the app):**
 
-- macOS 27 or later on Apple Silicon.
-- Xcode 27 or later (Swift 6.2+). The package declares `swift-tools-version: 6.2` and `macOS 27`.
+- macOS 26 or later on Apple Silicon.
+- Xcode or the Command Line Tools with Swift 6.2 or later. The package declares `swift-tools-version: 6.2` and `macOS 26` as the deployment target.
+- Which SDK you build against decides one thing: the menu bar item. With the macOS 27 SDK (Xcode 27, as releases are built), the app uses the macOS 27 expanded menu bar interface when it runs on macOS 27, which brings menu bar keyboard navigation and menu tracking. With the macOS 26 SDK, that code is left out, and the popover opens from a plain button action on every macOS version.
 - Sparkle 2.10.0, which Swift Package Manager fetches.
 
 **Linux (the daemon and CLI):** Swift 6.4, installed with [swiftly](https://www.swift.org/install/linux/). The Linux packages are built for x86_64 only. Docker is needed for `scripts/linux/ci.sh` and the packages.
@@ -23,6 +24,9 @@ open build/Vizier.app
 ```
 
 ## Build and test on Linux
+
+Install `libwayland-dev` on the build host for the bundled COSMIC focus reader,
+including package builds (Debian/Ubuntu: `sudo apt install libwayland-dev`).
 
 ```bash
 swift build -c release --product vizier    # .build/release/vizier

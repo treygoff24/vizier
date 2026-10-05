@@ -49,9 +49,10 @@ public final class LinuxFocusProbe: FocusProbe {
         polling?.cancel(); polling = nil
         guard on else { return }
         refresh()
+        let interval: Duration = reader is CosmicFocusReader ? .seconds(3) : .seconds(1)
         polling = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
+                try? await Task.sleep(for: interval)
                 self?.refresh()
             }
         }

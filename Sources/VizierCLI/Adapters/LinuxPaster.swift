@@ -31,8 +31,8 @@ public struct PastePlan: Sendable {
 public enum DesktopRoutes {
     /// The adapters this session can use, each probed: a tool that is installed but that the
     /// session cannot use (wtype on GNOME) is not in the list (A16: never choose by "installed").
-    /// `ydotool` is the opt-in fallback sender and comes last. Writers and senders are probed and
-    /// kept independently of each other.
+    /// `ydotool` is the default on COSMIC; elsewhere it is an opt-in fallback and comes last. Writers and senders are probed and
+    /// kept independently of each other. COSMIC retains its sender for late socket recovery.
     public static func make(session: DesktopSession, env: HelperEnvironment = HelperEnvironment(), allowYdotool: Bool = false) async -> PastePlan {
         var writers: [any ClipboardWriter] = []
         var senders: [any KeySender] = []
@@ -43,15 +43,22 @@ public enum DesktopRoutes {
             senders = [XdotoolKeySender(env: env)]
         case .wayland:
             writers = [WlCopyClipboardWriter(session: session, env: env)]
-            senders = [WtypeKeySender(session: session, env: env)]
+            senders = session.family == .cosmic
+                ? [CosmicKeySender(env: env)] : [WtypeKeySender(session: session, env: env)]
         case .none:
             return PastePlan(writers: [], senders: [])
         }
-        if allowYdotool { senders.append(YdotoolKeySender(env: env)) }
+        if allowYdotool && !(session.display == .wayland && session.family == .cosmic) { senders.append(YdotoolKeySender(env: env)) }
         var usableWriters: [any ClipboardWriter] = []
         for writer in writers where await writer.probe().available { usableWriters.append(writer) }
         var usableSenders: [any KeySender] = []
-        for sender in senders where await sender.probe().available { usableSenders.append(sender) }
+        for sender in senders {
+            let keepForRecovery = session.display == .wayland && session.family == .cosmic
+            let available = await sender.probe().available
+            if keepForRecovery || available {
+                usableSenders.append(sender)
+            }
+        }
         return PastePlan(writers: usableWriters, senders: usableSenders)
     }
 
@@ -81,13 +88,13 @@ public enum DesktopRoutes {
 /// - The chord is Ctrl+Shift+V when the focused app is known to be a terminal, else Ctrl+V.
 /// - Immediately before the chord the clipboard is read back again; if it no longer holds the text
 ///   (another app took the selection during the pause) nothing is sent and `onClipboard` is false.
-/// - A sender that throws could not be started, so the next sender is tried. Once a sender has
-///   returned, the chord went out or may have; no other sender is ever tried (A16).
+/// - A sender that cannot start permits the next sender to be tried. A helper that started
+///   and failed reports uncertain delivery; no other sender is tried (A16).
 /// - `stillWanted` is read right before the keystroke; false means `.withdrawn`, with the text
 ///   left on the clipboard.
 ///
 /// Weaker than macOS: there is no secure-field or secure-input check (Linux has no general
-/// equivalent), and the focused app is only known on X11, sway and Hyprland. The one check kept is
+/// equivalent), and the focused app is known on X11, sway, Hyprland and COSMIC (COSMIC supplies no PID). The one check kept is
 /// the focus move: when the pid was known at the stop and is known and different now, the paste
 /// is held (`PasteDecision.focusMoved`). If either pid is unknown, the paste goes ahead.
 @MainActor
@@ -161,6 +168,8 @@ public final class LinuxPaster: PasteService {
             do {
                 try await sender.send(chord)
                 return PasteOutcome(kind: .pasted, method: sender.name, reason: nil, onClipboard: true, permissionMissing: false, logCode: sender.name)
+            } catch let error as KeyDeliveryError {
+                return PasteOutcome(kind: .failed, method: sender.name, reason: error.description, onClipboard: true, permissionMissing: false, logCode: "failed-key-helper")
             } catch {
                 sendFailures.append("\(sender.name): \(error)")
             }

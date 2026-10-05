@@ -55,10 +55,11 @@ targets.append(
 )
 // Linux: the `vizier` executable (daemon and CLI) is added here by the package that owns it.
 products.append(.executable(name: "vizier", targets: ["vizier"]))
+targets.append(.target(name: "CCosmicFocus", exclude: ["README.md", "LICENSE"], linkerSettings: [.linkedLibrary("wayland-client")]))
 targets.append(.target(name: "VizierCLI", dependencies: ["VizierEngine"]))
 // Its sources live in Sources/vizier-linux: a Sources/vizier folder is the same folder as the app's
 // Sources/Vizier on the Mac's case-insensitive disk, so the app would compile the CLI's main.swift.
-targets.append(.executableTarget(name: "vizier", dependencies: ["VizierCLI"], path: "Sources/vizier-linux"))
+targets.append(.executableTarget(name: "vizier", dependencies: ["VizierCLI", "CCosmicFocus"], path: "Sources/vizier-linux"))
 testTargets.append(.testTarget(name: "VizierCLITests", dependencies: ["VizierCLI", "VizierEngine"]))
 #endif
 
@@ -66,7 +67,7 @@ testTargets.insert(.testTarget(name: "VizierEngineTests", dependencies: engineTe
 
 let package = Package(
     name: "Vizier",
-    platforms: [.macOS("27.0")],
+    platforms: [.macOS("26.0")],
     products: products,
     dependencies: dependencies,
     targets: [

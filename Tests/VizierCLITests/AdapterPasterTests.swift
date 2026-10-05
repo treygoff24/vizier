@@ -241,16 +241,16 @@ private struct FixedFocus: FocusReader {
         #expect(await DesktopRoutes.make(session: DesktopSession(display: .none, family: .other, currentDesktop: ""), env: x11Env).isEmpty)
     }
 
-    @Test func aKeyHelperThatRunsIsNeverReportedAsNotSent() async throws {
+    @Test func aFailedKeyHelperReportsUncertainDelivery() async throws {
         let bins = FakeBins()
         bins.add("slow", body: "sleep 5", reads: false)
-        // Returns (no throw) at the deadline: a key may have gone out, and a second injector must not run.
-        try await Helper.send(["slow"], environment: bins.environment(), timeout: .milliseconds(200))
+        // Uncertain delivery at the deadline must not invite a second injector.
+        await #expect(throws: KeyDeliveryError.self) { try await Helper.send(["slow"], environment: bins.environment(), timeout: .milliseconds(200)) }
         // A non-zero exit and a death by signal are post-spawn results too: events may already have been written.
         bins.add("bad", body: "echo 'compositor refuses' >&2; exit 1", reads: false)
-        try await Helper.send(["bad"], environment: bins.environment())
+        await #expect(throws: KeyDeliveryError.self) { try await Helper.send(["bad"], environment: bins.environment()) }
         bins.add("killed", body: "kill -KILL $$", reads: false)
-        try await Helper.send(["killed"], environment: bins.environment())
+        await #expect(throws: KeyDeliveryError.self) { try await Helper.send(["killed"], environment: bins.environment()) }
         // Only a helper that could not be spawned at all sent nothing.
         await #expect(throws: AdapterError.self) { try await Helper.send(["vizier-absent"], environment: bins.environment()) }
     }
@@ -268,7 +268,8 @@ private struct FixedFocus: FocusReader {
                              senders: [WtypeKeySender(session: session, env: env), YdotoolKeySender(env: env)])
         let outcome = await LinuxPaster(plan: plan, focus: FixedFocus(window: nil), prePasteDelay: .milliseconds(1)).paste("once only", focusAtStop: nil, stillWanted: { true })
         #expect(FileManager.default.fileExists(atPath: bins.directory + "/delivered"))
-        #expect(outcome.kind == .pasted)
+        #expect(outcome.kind == .failed)
+        #expect(outcome.logCode == "failed-key-helper")
         #expect(outcome.method == "wtype")
         #expect(bins.argv("ydotool").isEmpty)
     }

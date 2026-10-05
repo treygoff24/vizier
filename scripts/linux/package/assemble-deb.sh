@@ -11,6 +11,7 @@ install -Dm0644 /repo/Resources/linux/net.praxient.vizier.desktop "$root/usr/sha
 install -Dm0644 /repo/Resources/linux/vizier.service "$root/usr/lib/systemd/user/vizier.service"
 sed -i 's|@VIZIER_BIN@|/usr/bin/vizier|g' "$root/usr/lib/systemd/user/vizier.service"
 install -m0644 /repo/NOTICE /repo/LICENSE "$root/usr/share/doc/vizier/"
+install -m0644 /repo/Sources/CCosmicFocus/LICENSE "$root/usr/share/doc/vizier/COSMIC-PROTOCOL-LICENSES"
 cat > "$root/usr/share/doc/vizier/copyright" <<'EOF'
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: Vizier
@@ -24,6 +25,36 @@ License: GPL-3
  /usr/share/common-licenses/GPL-3. The upstream grant is version 3 only.
 Comment: See NOTICE for individual upstream attribution and LICENSE for the
  complete license shipped with this package.
+
+Files: Sources/CCosmicFocus/protocols/*
+Copyright: 2018, 2020 Ilia Bozhinov
+           2019 Christopher Billington
+           2020 Isaac Freund
+           2022, 2024 Victoria Brekenfeld
+           2022 wb9688
+           2023 i509VCB
+License: HPND-sell-variant
+ Permission to use, copy, modify, distribute, and sell this
+ software and its documentation for any purpose is hereby granted
+ without fee, provided that the above copyright notice appear in
+ all copies and that both that copyright notice and this permission
+ notice appear in supporting documentation, and that the name of
+ the copyright holders not be used in advertising or publicity
+ pertaining to distribution of the software without specific,
+ written prior permission.  The copyright holders make no
+ representations about the suitability of this software for any
+ purpose.  It is provided "as is" without express or implied
+ warranty.
+ .
+ THE COPYRIGHT HOLDERS DISCLAIM ALL WARRANTIES WITH REGARD TO THIS
+ SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ FITNESS, IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
+ AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+ THIS SOFTWARE.
+Comment: See COSMIC-PROTOCOL-LICENSES for the individual notices.
 EOF
 cat > "$root/usr/share/doc/vizier/changelog" <<EOF
 vizier ($version) unstable; urgency=medium

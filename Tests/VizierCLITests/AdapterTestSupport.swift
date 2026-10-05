@@ -36,7 +36,7 @@ final class FakeBins {
         // A unix socket path holds about 100 bytes, and fixtures bind sockets in here: a long
         // $TMPDIR (macOS-style or a nested sandbox) falls back to a short root under /tmp.
         let preferred = NSTemporaryDirectory() + "vizier-fakebins-\(UUID().uuidString)"
-        directory = preferred.utf8.count + "/.ydotool_socket".utf8.count < SocketFixture.pathLimit
+        directory = preferred.utf8.count + "/vizier-input/socket".utf8.count < SocketFixture.pathLimit
             ? preferred : "/tmp/vzfb-\(UUID().uuidString.prefix(8))"
         try! FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         // The fakes' own tools, so PATH can be this directory alone: a real xclip or wtype on the

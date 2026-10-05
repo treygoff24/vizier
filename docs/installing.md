@@ -4,7 +4,7 @@ This page is for the Mac app. For Linux, see [Vizier on Linux](linux.md).
 
 ## Requirements
 
-- macOS 27 or later on Apple Silicon.
+- macOS 26 or later on Apple Silicon.
 - A microphone. Vizier records from the system's default input device.
 - Optional: an ElevenLabs or Google Gemini API key, for the cloud modes. The default mode needs neither.
 
