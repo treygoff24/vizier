@@ -75,7 +75,12 @@ import Testing
     @Test func waveformBarsFollowLoudnessAndSilenceIsFlat() throws {
         // Half a second of silence, then half a second of tone at a quarter of full scale.
         var samples = [Float](repeating: 0, count: 8_000)
-        samples += (0..<8_000).map { Float(0.25 * sin(Double($0) * 2 * .pi * 220 / 16_000)) }
+        // Kept in named steps: Xcode 26's compiler cannot type-check this as one expression.
+        let radiansPerSample: Double = 2 * Double.pi * 220 / 16_000
+        for i in 0..<8_000 {
+            let value: Double = 0.25 * sin(Double(i) * radiansPerSample)
+            samples.append(Float(value))
+        }
         let bars = samples.withUnsafeBufferPointer { Waveform.bars($0, count: 4) }
         #expect(bars[0] == 0 && bars[1] == 0)
         #expect(bars[2] > 0.99 && bars[3] > 0.99)
@@ -95,7 +100,11 @@ import Testing
         let buffer = AVAudioPCMBuffer(pcmFormat: HALCapture.outputFormat, frameCapacity: AVAudioFrameCount(frames))!
         buffer.frameLength = AVAudioFrameCount(frames)
         // Loud first second, silent second second.
-        for i in 0..<frames { buffer.int16ChannelData![0][i] = i < 16_000 ? Int16(8_000 * sin(Double(i) * 2 * .pi * 440 / 16_000)) : 0 }
+        let radiansPerSample: Double = 2 * Double.pi * 440 / 16_000
+        for i in 0..<frames {
+            let value: Double = i < 16_000 ? 8_000 * sin(Double(i) * radiansPerSample) : 0
+            buffer.int16ChannelData![0][i] = Int16(value)
+        }
         try file.write(from: buffer)
         file.close()
         let flac = try store.finishAudio(takeFiles)
