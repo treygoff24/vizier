@@ -9,11 +9,15 @@ public enum Engines {
 
         public static let gemini = KeyAccount(account: "gemini", name: "Gemini")
         public static let elevenLabs = KeyAccount(account: "elevenlabs", name: "ElevenLabs")
+        public static let soniox = KeyAccount(account: "soniox", name: "Soniox")
+        public static let assemblyAI = KeyAccount(account: "assemblyai", name: "AssemblyAI")
     }
 
     /// The key an engine needs, or nil for an engine on this Mac.
     public static func keyAccount(for engine: String) -> KeyAccount? {
         if ConfigStore.localEngines.contains(engine) || ConfigStore.appleEngines.contains(engine) { return nil }
+        if engine.hasPrefix("soniox-") { return .soniox }
+        if engine.hasPrefix("assemblyai-") { return .assemblyAI }
         return engine.hasPrefix("elevenlabs-") ? .elevenLabs : .gemini
     }
 
@@ -61,6 +65,14 @@ public enum Engines {
             let setup = ScribeRealtime.Setup(
                 model: transcriber.model, languages: transcriber.languages, vocabulary: vocabulary, noVerbatim: transcriber.mode == "no_verbatim")
             return ScribeRealtimeTranscriber(setup: setup, apiKey: key, finalTimeoutMs: transcriber.finalTimeoutMs)
+        case "soniox-realtime":
+            guard let key else { return nil }
+            let setup = SonioxRealtime.Setup(model: transcriber.model, languages: transcriber.languages, vocabulary: vocabulary)
+            return SonioxRealtimeTranscriber(setup: setup, apiKey: key, finalTimeoutMs: transcriber.finalTimeoutMs)
+        case "assemblyai-realtime":
+            guard let key else { return nil }
+            let setup = AssemblyAIRealtime.Setup(model: transcriber.model, vocabulary: vocabulary)
+            return AssemblyAIRealtimeTranscriber(setup: setup, apiKey: key, finalTimeoutMs: transcriber.finalTimeoutMs)
         default:
             guard let key else { return nil }
             let setup = GeminiLive.Setup(model: transcriber.model, mode: transcriber.mode, languages: transcriber.languages, vocabulary: vocabulary)

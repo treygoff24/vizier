@@ -79,7 +79,7 @@ If a live mode's stream fails or is late, Vizier sends the saved audio through t
 | `engine` | One of the engines below. |
 | `model` | The provider's model name. |
 | `mode` | An engine-specific setting, see below. |
-| `languages` | A list of BCP-47 tags, such as `["en-US"]` or `["de-DE"]`. `[]` is allowed for Scribe and Gemini and lets them detect the language. See [Languages](#languages). |
+| `languages` | A list of BCP-47 tags, such as `["en-US"]` or `["de-DE"]`. `[]` is allowed for Scribe, Gemini, Soniox and AssemblyAI and lets them detect the language. See [Languages](#languages). |
 | `final_timeout_ms` | Greater than 0. How long to wait after the stop tap for the live engine's final transcript before the saved audio goes to batch. |
 | `url` | Local engines only; see below. |
 
@@ -104,6 +104,8 @@ Each has `engine`, `model` and `mode`, and `url` for local engines. `offline_fal
 | Live transcriber | `apple-speech` | On-device, no key |
 | | `elevenlabs-scribe-realtime` | Needs an ElevenLabs key |
 | | `gemini-live` | Needs a Gemini key |
+| | `soniox-realtime` | Needs a Soniox key; model `stt-rt-v5`. Mac only for now, see [Soniox and AssemblyAI](#soniox-and-assemblyai) |
+| | `assemblyai-realtime` | Needs an AssemblyAI key; model `universal-3-6-pro`. Mac only for now, see the same section |
 | Batch transcriber or fallback | `apple-speech-batch` | On-device, no key |
 | | `elevenlabs-scribe-batch` | ElevenLabs key |
 | | `gemini-batch` | Gemini key |
@@ -117,6 +119,7 @@ The `mode` field depends on the engine:
 
 - **Apple.** Use `general`.
 - **Scribe realtime.** `verbatim` or `no_verbatim`; `no_verbatim` turns on Scribe's own removal of fillers and false starts. **Scribe batch.** `verbatim` only.
+- **Soniox realtime** and **AssemblyAI realtime.** `verbatim` only.
 - **Gemini live.** `VERBATIM` or `SMART`, in capitals. **Gemini batch.** `verbatim` or `smart`, lower case.
 
 ### Languages
@@ -126,6 +129,8 @@ The `mode` field depends on the engine:
 - **Apple** uses the first entry only.
 - **Scribe** uses the part before the hyphen of the first entry (`de-DE` becomes `de`, because the API does not accept a region suffix). With `[]`, Scribe detects the language.
 - **Gemini** receives the whole list as a hint, not a limit. With `[]`, Gemini detects the language.
+- **Soniox** receives the part before the hyphen of every entry as language hints. With `[]`, Soniox detects the language.
+- **AssemblyAI** ignores the list; its model detects the language and follows a switch mid-take.
 
 A bare language such as `en` is given a region before Apple's recognizer is asked about it: your Mac's region if its language matches (`en` on a British-English Mac is `en-GB`), otherwise the language's usual region (`en` is `en-US`, `de` is `de-DE`). This keeps older configs that name `en` working.
 
@@ -185,15 +190,38 @@ What it is: a mode whose engine is `local-whisper` sends audio to a [whisper.cpp
 
 If a local server is not running, the take fails with a remark that says so, and the audio is saved. Local engines are loopback only; see above.
 
+## Soniox and AssemblyAI
+
+Two more live engines, added in 0.3.0, are not in the starter file: Soniox (`soniox-realtime`, model `stt-rt-v5`) and AssemblyAI (`assemblyai-realtime`, Universal-3.6 Pro streaming, model `universal-3-6-pro`). Both stream your audio as you speak and send your vocabulary as hints (see [vocabulary and replacements](vocabulary-and-replacements.md)). Settings › Accounts has no field for their keys yet, so store the key from a terminal (below), then add a mode like this to `modes` and select it:
+
+```jsonc
+{
+  "id": "soniox",
+  "name": "Soniox",
+  "transcriber": {
+    "engine": "soniox-realtime", // or "assemblyai-realtime" with "model": "universal-3-6-pro"
+    "model": "stt-rt-v5",
+    "mode": "verbatim",
+    "languages": ["en-US"],
+    "final_timeout_ms": 3000,
+  },
+  // If the stream fails, Apple's recognizer transcribes the saved audio on this Mac.
+  "offline_fallback": { "engine": "apple-speech-batch", "model": "speech-transcriber", "mode": "general" },
+  "remove_fillers": true,
+}
+```
+
+Linux does not support these two engines yet: its config accepts them, but `vizier key` stores only ElevenLabs and Gemini keys.
+
 ## Keys
 
-API keys are in the macOS Keychain as generic passwords under the service `net.praxient.dictum`, with the accounts `elevenlabs` and `gemini`. They are read on every take, so a new key works immediately. Add them in Settings › Accounts, or pipe one in:
+API keys are in the macOS Keychain as generic passwords under the service `net.praxient.dictum`, with the accounts `elevenlabs`, `gemini`, `soniox` and `assemblyai`. They are read on every take, so a new key works immediately. Add ElevenLabs and Gemini keys in Settings › Accounts, or pipe any of the four in:
 
 ```bash
 printf '%s' "$KEY" | /Applications/Vizier.app/Contents/MacOS/Vizier --store-key elevenlabs
 ```
 
-The command reads the key from standard input only, and refuses a terminal. Settings › Accounts has a Test key button, which makes a read-only request (ElevenLabs `/v1/user`, Gemini `/v1beta/models`) that does not bill you.
+The command reads the key from standard input only, and refuses a terminal. For Soniox or AssemblyAI, name the account `soniox` or `assemblyai`. Settings › Accounts has a Test key button, which makes a read-only request (ElevenLabs `/v1/user`, Gemini `/v1beta/models`) that does not bill you.
 
 ## Limits
 

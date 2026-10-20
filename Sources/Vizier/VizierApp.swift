@@ -11,6 +11,8 @@ enum VizierApp {
         if let code = ImportCommand.run(CommandLine.arguments) { exit(code) }
         if let code = TranscribeAppleCommand.run(CommandLine.arguments) { exit(code) }
         if let code = RenderUICommand.run(CommandLine.arguments) { exit(code) }
+        if let code = BenchLiveCommand.run(CommandLine.arguments) { exit(code) }
+        if let code = BenchJudgeCommand.run(CommandLine.arguments) { exit(code) }
         let app = NSApplication.shared
         let delegate: NSApplicationDelegate
         if let flag = CommandLine.arguments.firstIndex(of: "--preview-surfaces") {

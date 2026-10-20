@@ -97,9 +97,22 @@ import Testing
         let live = #"{ "engine": "gemini-live", "model": "m", "mode": "SMART", "languages": [], "final_timeout_ms": 900 }"#
         let typo = #"{ "engine": "gemini-lvie", "model": "m", "mode": "SMART", "languages": [], "final_timeout_ms": 900 }"#
         try write(store.settingsURL, #"{ "mode": "a", "modes": [ { "id": "a", "name": "A", "transcriber": \#(typo) } ] }"#)
-        #expect(store.load().errors == [.settings("mode \"a\" names transcriber engine \"gemini-lvie\"; this build knows \"gemini-live\", \"elevenlabs-scribe-realtime\", \"apple-speech\", \"gemini-batch\", \"elevenlabs-scribe-batch\", \"local-whisper\", \"apple-speech-batch\"")])
+        #expect(store.load().errors == [.settings("mode \"a\" names transcriber engine \"gemini-lvie\"; this build knows \"gemini-live\", \"elevenlabs-scribe-realtime\", \"soniox-realtime\", \"assemblyai-realtime\", \"apple-speech\", \"gemini-batch\", \"elevenlabs-scribe-batch\", \"local-whisper\", \"apple-speech-batch\"")])
         try write(store.settingsURL, #"{ "mode": "a", "modes": [ { "id": "a", "name": "A", "transcriber": \#(live), "fallback": { "engine": "scribe", "model": "m", "mode": "x" } } ] }"#)
         #expect(store.load().errors == [.settings("mode \"a\" names fallback engine \"scribe\"; this build knows \"gemini-batch\", \"elevenlabs-scribe-batch\", \"local-whisper\", \"apple-speech-batch\"")])
+    }
+
+    @Test func acceptsSonioxAndAssemblyAIOnlyInVerbatim() throws {
+        let soniox = #"{ "engine": "soniox-realtime", "model": "stt-rt-v5", "mode": "verbatim", "languages": ["en"], "final_timeout_ms": 900 }"#
+        try write(store.settingsURL, #"{ "mode": "a", "modes": [ { "id": "a", "name": "A", "transcriber": \#(soniox) } ] }"#)
+        #expect(store.load().errors == [])
+        try write(store.settingsURL, #"{ "mode": "a", "modes": [ { "id": "a", "name": "A", "transcriber": \#(soniox.replacingOccurrences(of: "\"verbatim\"", with: "\"SMART\"")) } ] }"#)
+        #expect(store.load().errors == [.settings("mode \"a\" gives Soniox the mode \"SMART\"; Soniox knows \"verbatim\"")])
+        let assembly = soniox.replacingOccurrences(of: "soniox-realtime", with: "assemblyai-realtime")
+        try write(store.settingsURL, #"{ "mode": "a", "modes": [ { "id": "a", "name": "A", "transcriber": \#(assembly) } ] }"#)
+        #expect(store.load().errors == [])
+        try write(store.settingsURL, #"{ "mode": "a", "modes": [ { "id": "a", "name": "A", "transcriber": \#(assembly.replacingOccurrences(of: "\"verbatim\"", with: "\"SMART\"")) } ] }"#)
+        #expect(store.load().errors == [.settings("mode \"a\" gives AssemblyAI the mode \"SMART\"; AssemblyAI knows \"verbatim\"")])
     }
 
     @Test func acceptsScribeBatchAsAFallbackOnlyInVerbatim() throws {

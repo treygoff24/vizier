@@ -10,18 +10,28 @@ import os
 /// in `ScribeRealtimeSession`; this class moves bytes, keeps them in order, and turns every way the
 /// connection can fail into one `TranscriberError`. It mirrors `GeminiLiveTranscriber`.
 ///
-/// When the session asks for a repair, a second connection carries it. A repair that fails or
+/// A second connection speculatively processes the session's repair audio before stop, without
+/// committing. Failed preparations fall back to a fresh repair on stop. A repair that fails or
 /// misses its deadline (a second inside the final timeout) leaves the live text in place; only the
 /// live connection's failures fail the take.
 public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendable {
     /// No cookies, no cache: every take is its own connection.
-    static let urlSession = URLSession(configuration: .ephemeral)
+    static let urlSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        // Bench replays can have six live streams and six speculative repairs on one host.
+        // Do not leave those upgrades queued behind the platform's default limit of six.
+        configuration.httpMaximumConnectionsPerHost = 32
+        return URLSession(configuration: configuration)
+    }()
 
     /// One socket and the frames waiting for it. Touched only on `queue`.
     private final class Link: @unchecked Sendable {
         let socket: URLSessionWebSocketTask
         var outbox: [Data] = []
         var sending = false
+        var ready = false
+        /// Raw PCM accepted for this link, including audio held until session_started.
+        var audioBytes = 0
         init(_ socket: URLSessionWebSocketTask) { self.socket = socket }
     }
 
@@ -37,11 +47,31 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
     private var live: Link?
     private var repair: Link?
     private var repairAudio: Data?
+    private var repairRequested = false
     private var onEvent: (@Sendable (LiveTranscriberEvent) -> Void)?
     private var outcome: Result<String, TranscriberError>?
     private var waiter: CheckedContinuation<String, Error>?
     private var timer: DispatchWorkItem?
     private var repairTimer: DispatchWorkItem?
+    private var repairSetupTimer: DispatchWorkItem?
+
+    // Numeric, text-free timing counters for the one-shot live benchmark.
+    private var timings: [String: Int] = [:]
+    private var commitTimes: [UInt64] = []
+    private var liveAnswersReceived = 0
+    private var liveAudioBytes = 0
+    private var stopTime: UInt64?
+    private var repairStart: UInt64?
+
+    public func diagnostics() async -> [String: Int] {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in continuation.resume(returning: timings) }
+        }
+    }
+
+    private func elapsed(_ since: UInt64) -> Int {
+        Int((DispatchTime.now().uptimeNanoseconds - since) / 1_000_000)
+    }
 
     public init(setup: ScribeRealtime.Setup, apiKey: String, finalTimeoutMs: Int) {
         self.setup = setup
@@ -53,10 +83,12 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
     #if os(Linux)
     // Loopback tests exercise FoundationNetworking itself, without provider credentials.
     private var testEndpoint: URL?
+    private var testPreparationTimeoutMs = 1_000
 
-    convenience init(setup: ScribeRealtime.Setup, apiKey: String, finalTimeoutMs: Int, endpoint: URL) {
+    convenience init(setup: ScribeRealtime.Setup, apiKey: String, finalTimeoutMs: Int, endpoint: URL, preparationTimeoutMs: Int = 1_000) {
         self.init(setup: setup, apiKey: apiKey, finalTimeoutMs: finalTimeoutMs)
         self.testEndpoint = endpoint
+        self.testPreparationTimeoutMs = preparationTimeoutMs
     }
     #endif
 
@@ -86,10 +118,18 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
                     continuation.resume(with: outcome.mapError { $0 as Error })
                     return
                 }
+                stopTime = DispatchTime.now().uptimeNanoseconds
                 waiter = continuation
                 let timer = DispatchWorkItem { [weak self] in self?.settle(.failure(.timedOut)) }
                 self.timer = timer
                 queue.asyncAfter(deadline: .now() + finalTimeout, execute: timer)
+                // Clear the frozen splice before end() chooses the cold repair's audio. A
+                // stalled preparation need not make the retry replay the longer, old tail.
+                if let repair, !repair.ready, let repairStart, elapsed(repairStart) >= 500 {
+                    timings["repair_setup_retries", default: 0] += 1
+                    closeRepair()
+                    session.repairPreparationFailed()
+                }
                 apply(session.end())
             }
         }
@@ -116,13 +156,45 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
             guard outcome == nil else { return }
             switch output {
             case .send(let message):
+                if message == .commit { commitTimes.append(DispatchTime.now().uptimeNanoseconds) }
+                if case .audio(let pcm) = message { liveAudioBytes += pcm.count }
                 guard let live else { continue }
                 guard enqueue([message], on: live) else {
                     settle(.failure(.streamLost("could not encode a message")))
                     return
                 }
-            case .repair(let audio):
+            case .prepareRepair(let audio):
                 startRepair(audio)
+            case .repairAudio(let audio):
+                timings["repair_audio_ms", default: 0] += audio.count * 1000 / 32_000
+                if let repair {
+                    repair.audioBytes += audio.count
+                    if repair.ready {
+                        if !enqueue([.audio(audio)], on: repair) { endRepair(failure: "could not encode repair audio") }
+                    } else {
+                        repairAudio?.append(audio)
+                    }
+                }
+            case .cancelRepair:
+                closeRepair()
+            case .repair(let audio):
+                // Never commit an incomplete spare: the session's selected audio is the source
+                // of truth, whether the link has sent it already or is holding it for setup.
+                if let repair, repair.audioBytes != audio.count {
+                    timings["repair_audio_mismatches", default: 0] += 1
+                    closeRepair()
+                }
+                if repair == nil { startRepair(audio) }
+                repairRequested = true
+                if let stopTime, let repairStart {
+                    timings["repair_prefilled_ms"] = Int((max(stopTime, repairStart) - repairStart) / 1_000_000)
+                }
+                let deadline = DispatchWorkItem { [weak self] in self?.endRepair(failure: "no answer before the repair deadline") }
+                repairTimer = deadline
+                queue.asyncAfter(deadline: .now() + repairTimeout, execute: deadline)
+                if let repair, repair.ready, !enqueue([.commit], on: repair) {
+                    endRepair(failure: "could not encode repair commit")
+                }
             case .transcript(let settled, let pending):
                 onEvent?(.transcript(settled: settled, pending: pending))
             case .note(let text):
@@ -183,6 +255,8 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
 
     private func lost(_ link: Link, _ reason: String) {
         if link === live {
+            timings["live_failure_at_audio_ms"] = liveAudioBytes * 1000 / 32_000
+            timings["live_answers_before_failure"] = liveAnswersReceived
             // The session decides: fatal while an answer is owed, harmless after the last one.
             self.live = nil
             link.outbox = []
@@ -214,6 +288,17 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
         if case .commitIgnored = event {
             log.notice("server ignored a commit with under 0.3 s of uncommitted audio")
         }
+        switch event {
+        case .committed, .commitIgnored:
+            if !commitTimes.isEmpty {
+                let rtt = elapsed(commitTimes.removeFirst())
+                liveAnswersReceived += 1
+                timings["live_answer_\(liveAnswersReceived)_ms"] = rtt
+                timings["live_answer_max_ms"] = max(timings["live_answer_max_ms"] ?? 0, rtt)
+                if let stopTime { timings["last_live_answer_after_stop_ms"] = elapsed(stopTime) }
+            }
+        default: break
+        }
         apply(session.receive(event))
     }
 
@@ -221,13 +306,24 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
 
     private func startRepair(_ audio: Data) {
         guard repair == nil else { return }
-        log.notice("repairing a short last segment with \(audio.count / 32_000, privacy: .public) s of audio")
+        repairStart = DispatchTime.now().uptimeNanoseconds
+        timings["repair_audio_ms"] = audio.count * 1000 / 32_000
+        log.notice("preparing a repair with \(audio.count / 32_000, privacy: .public) s of audio")
         let link = connect()
         repair = link
+        link.audioBytes = audio.count
         repairAudio = audio
-        let deadline = DispatchWorkItem { [weak self] in self?.endRepair(failure: "no answer before the repair deadline") }
-        repairTimer = deadline
-        queue.asyncAfter(deadline: .now() + repairTimeout, execute: deadline)
+        let setupDeadline = DispatchWorkItem { [weak self, weak link] in
+            guard let self, let link, self.repair === link, !link.ready, !self.repairRequested else { return }
+            self.endRepair(failure: "speculative session did not start")
+        }
+        repairSetupTimer = setupDeadline
+        #if os(Linux)
+        let setupTimeout = DispatchTimeInterval.milliseconds(testPreparationTimeoutMs)
+        #else
+        let setupTimeout = DispatchTimeInterval.seconds(1)
+        #endif
+        queue.asyncAfter(deadline: .now() + setupTimeout, execute: setupDeadline)
         receive(on: link)
     }
 
@@ -235,12 +331,23 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
         guard let link = repair else { return }
         switch event {
         case .sessionStarted:
+            repairSetupTimer?.cancel()
+            repairSetupTimer = nil
+            if let repairStart { timings["repair_handshake_ms"] = elapsed(repairStart) }
             guard let audio = repairAudio else { return }
             repairAudio = nil
-            if !enqueue(ScribeRealtimeSession.repairMessages(audio), on: link) {
+            link.ready = true
+            let messages = Array(ScribeRealtimeSession.repairMessages(audio).dropLast()) + (repairRequested ? [.commit] : [])
+            if !enqueue(messages, on: link) {
                 endRepair(failure: "could not encode the repair audio")
             }
         case .committed(let text):
+            guard repairRequested else {
+                endRepair(failure: "the spare committed before stop")
+                return
+            }
+            if let repairStart { timings["repair_total_ms"] = elapsed(repairStart) }
+            if let stopTime { timings["repair_answer_after_stop_ms"] = elapsed(stopTime) }
             closeRepair()
             apply(session.repaired(text))
         case .commitIgnored:
@@ -254,14 +361,23 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
 
     private func endRepair(failure reason: String) {
         guard repair != nil else { return }
+        let requested = repairRequested
         closeRepair()
-        apply(session.repairFailed(reason))
+        if requested {
+            apply(session.repairFailed(reason))
+        } else {
+            timings["repair_preparation_failures", default: 0] += 1
+            session.repairPreparationFailed()
+        }
     }
 
     private func closeRepair() {
+        repairSetupTimer?.cancel()
+        repairSetupTimer = nil
         repairTimer?.cancel()
         repairTimer = nil
         repairAudio = nil
+        repairRequested = false
         repair?.outbox = []
         repair?.socket.cancel(with: .normalClosure, reason: nil)
         repair = nil

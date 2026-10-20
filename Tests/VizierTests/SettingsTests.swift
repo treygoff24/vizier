@@ -603,3 +603,15 @@ final class LanguageSource: SpeechModelSource, @unchecked Sendable {
         }
     }
 }
+
+@Suite struct EngineNamesTests {
+    /// The popover, Settings and History show a mode's engines by name; a raw id there means a new
+    /// engine was added to the config without a name.
+    @Test func everyEngineTheConfigAcceptsHasAName() {
+        let engines = ConfigStore.liveEngines + ConfigStore.batchEngines + ConfigStore.cleanupEngines
+        #expect(engines.count >= 10)
+        for engine in engines {
+            #expect(EngineNames.name(engine) != engine, "no display name for \(engine)")
+        }
+    }
+}

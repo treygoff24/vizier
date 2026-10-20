@@ -26,11 +26,11 @@ curl --fail --location --retry 3 -o "$tool" 'https://github.com/AppImage/appimag
 printf '%s  %s\n' 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0' "$tool" | sha256sum --check -
 chmod 0755 "$tool"
 # Pin the runtime too: appimagetool otherwise downloads mutable, unchecked bytes.
-# type2-runtime continuous asset from commit 8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa.
+# type2-runtime continuous asset from commit fedfad51acc2860b2916a1eef32ba4a500ff31ef (published 2026-10-19).
 # A moved release fails checksum verification; update the pin deliberately.
 runtime=/out/runtime-x86_64
 curl --fail --location --retry 3 -o "$runtime" 'https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64'
-printf '%s  %s\n' '156f4bdbde9c52d01814600013e0a273f0118dc2de98975f3c8c63427ec79074' "$runtime" | sha256sum --check -
+printf '%s  %s\n' '617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46' "$runtime" | sha256sum --check -
 artifact=$appdir.AppImage
 ARCH=x86_64 "$tool" --appimage-extract-and-run --runtime-file "$runtime" \
     --mksquashfs-opt -processors --mksquashfs-opt 8 "$appdir" "$artifact"

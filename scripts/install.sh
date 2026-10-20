@@ -10,9 +10,15 @@ bash "$repo/scripts/build-app.sh"
 # Quitting by bundle id reaches a copy installed under the old name too (Vizier was Dictum until
 # 2026-10-03), whose process is named Dictum.
 osascript -e 'tell application id "net.praxient.dictum" to quit' >/dev/null 2>&1 || true
-for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -xq Vizier || pgrep -xq Dictum || break; sleep 0.3; done
-pkill -x Vizier 2>/dev/null || true
-pkill -x Dictum 2>/dev/null || true
+# Wait for, and if need be stop, only the processes running the installed copies, matched by executable
+# path. Never match by process name: a command-line run of another copy of the binary (a benchmark run
+# from a copied bundle, say) is also named Vizier and must survive an install.
+installed_pids() {
+  ps -axo pid=,comm= | awk -v a="$dest/Contents/MacOS/Vizier" -v b="$HOME/Applications/Dictum.app/Contents/MacOS/Dictum" \
+    '{ pid = $1; sub(/^ *[0-9]+ /, ""); if ($0 == a || $0 == b) print pid }'
+}
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -n "$(installed_pids)" ] || break; sleep 0.3; done
+for pid in $(installed_pids); do kill "$pid" 2>/dev/null || true; done
 
 mkdir -p "$HOME/Applications"
 if [ -e "$dest" ]; then rm -rf -- "$dest"; fi

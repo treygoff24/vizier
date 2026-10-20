@@ -458,6 +458,109 @@ import Testing
         #expect(repair([committed, Self.timed(Self.segment, starts: [1, 5, 10, 20, 21, 22.4, 25, 29])]) == [audio], "a word after the segment ends")
     }
 
+    @Test func aTimedCommitPrefillsTheRepairAndFreezesItsSplice() {
+        var session = started()
+        let first = Self.speech(seconds: 28)
+        _ = stream(first, into: &session)
+        let answer = session.receive(.committed(Self.segment))
+        #expect(!answer.contains { if case .prepareRepair = $0 { true } else { false } })
+        let prepared = session.receive(Self.timed(Self.segment, starts: Self.segmentStarts))
+        // At 28 s, "then" at 20 s is the latest word leaving eight seconds of context.
+        let offset = 630_400 // 19.7 s, including the word's onset.
+        #expect(prepared == [.prepareRepair(first.suffix(from: offset))])
+        let tail = Self.speech(seconds: 2.5)
+        let forwarded = stream(tail, into: &session).outputs.compactMap { output -> Data? in
+            if case .repairAudio(let audio) = output { audio } else { nil }
+        }
+        #expect(forwarded.reduce(Data(), +) == tail)
+        #expect(repairs(session.end()) == [(first + tail).suffix(from: offset)], "the stop must not move the splice under audio already sent")
+        _ = session.receive(.committed("gan"))
+        #expect(session.repaired("Then the quaxil ships and the gantry closes.").last ==
+                .done("Zorblex runs first then the quaxil ships and the gantry closes."))
+    }
+
+    @Test func aPreparedRepairIsDiscardedOnceTheLastSegmentIsLongEnough() {
+        var session = started()
+        _ = stream(Self.speech(seconds: 28), into: &session)
+        _ = session.receive(.committed(Self.segment))
+        #expect(!session.receive(Self.timed(Self.segment, starts: Self.segmentStarts)).isEmpty)
+        let outputs = stream(Self.speech(seconds: 6), into: &session).outputs
+        #expect(outputs.count { $0 == .cancelRepair } == 1)
+        #expect(outputs.contains { if case .repairAudio = $0 { true } else { false } })
+        #expect(!session.audio(a).contains { if case .repairAudio = $0 { true } else { false } })
+        #expect(repairs(session.end()).isEmpty)
+    }
+
+    @Test func aFailedPreparationFallsBackToAFreshSpliceAtStop() {
+        var session = started()
+        let audio = Self.speech(seconds: 30.5)
+        _ = stream(audio.prefix(28 * Self.second), into: &session)
+        _ = session.receive(.committed(Self.segment))
+        #expect(!session.receive(Self.timed(Self.segment, starts: Self.segmentStarts)).isEmpty)
+        _ = stream(Data(audio.suffix(from: 28 * Self.second)), into: &session)
+        session.repairPreparationFailed()
+        // The failed spare started at 19.7 s; a cold repair can now start at 22.1 s.
+        #expect(repairs(session.end()) == [audio.suffix(from: 707_200)])
+    }
+
+    @Test(arguments: [false, true])
+    func unusableWordTimingsPrefillTheWholeSegmentWithoutTrimming(_ timingsFirst: Bool) {
+        var session = started()
+        let audio = Self.speech(seconds: 28)
+        _ = stream(audio, into: &session)
+        // Both the timed frame's text and its pieces disagree with the plain answer.
+        let plain = ScribeRealtime.ServerEvent.committed(Self.segment)
+        let unusable = ScribeRealtime.ServerEvent.timed(text: "Zorblex", tokens: [.init("Zorblex", start: 1, end: 2)])
+        let early = session.receive(timingsFirst ? unusable : plain)
+        #expect(!early.contains { if case .prepareRepair = $0 { true } else { false } })
+        let late = session.receive(timingsFirst ? plain : unusable)
+        #expect(late.contains(.prepareRepair(audio)), "unmatched token text cannot supply a safe splice, in either arrival order")
+        let tail = Self.speech(seconds: 2)
+        _ = stream(tail, into: &session)
+        #expect(repairs(session.end()) == [audio + tail])
+    }
+
+    @Test func anExpiredSpareCanBePreparedAgainForTheNextCommit() {
+        var session = started()
+        _ = stream(Self.speech(seconds: 28), into: &session)
+        _ = session.receive(.committed(Self.segment))
+        #expect(!session.receive(Self.timed(Self.segment, starts: Self.segmentStarts)).isEmpty)
+        let expired = stream(Self.speech(seconds: 6), into: &session).outputs
+        #expect(expired.count { $0 == .cancelRepair } == 1)
+        let next = stream(Self.speech(seconds: 22), into: &session)
+        #expect(next.commitsAt.count == 1)
+        #expect(!next.outputs.contains { if case .repairAudio = $0 { true } else { false } })
+        _ = session.receive(.committed(Self.segment))
+        let prepared = session.receive(Self.timed(Self.segment, starts: Self.segmentStarts.map { $0 + 28 }))
+        #expect(prepared.count { if case .prepareRepair = $0 { true } else { false } } == 1)
+        #expect(stream(Self.speech(seconds: 1), into: &session).outputs.contains { if case .repairAudio = $0 { true } else { false } })
+        #expect(repairs(session.end()).count == 1)
+    }
+
+    @Test func aPreparedSpareIsUnusedWhenStopLandsInQuietAfterAPauseCommit() {
+        var session = started()
+        let first = stream(Self.speech(seconds: 20.6) + Self.pause(ms: 300), into: &session)
+        #expect(first.commitsAt.count == 1)
+        _ = session.receive(.committed("Zorblex runs."))
+        let prepared = session.receive(.timed(text: "Zorblex runs.", tokens: []))
+        #expect(prepared.contains { if case .prepareRepair = $0 { true } else { false } })
+        let quiet = stream(Self.pause(ms: 700), into: &session).outputs
+        #expect(quiet.contains { if case .repairAudio = $0 { true } else { false } })
+        #expect(!quiet.contains(.cancelRepair), "the spare is still open at stop")
+        let end = session.end()
+        #expect(repairs(end).isEmpty)
+        #expect(end.contains(.send(.commit)))
+        #expect(session.receive(.commitIgnored) == [.done("Zorblex runs.")], "settlement can close the unused spare without waiting for it")
+    }
+
+    @Test func timingsArrivingAfterStopCannotPrepareASecondRepair() {
+        var session = started()
+        _ = stream(Self.speech(seconds: 30.5), into: &session)
+        _ = session.receive(.committed(Self.segment))
+        #expect(repairs(session.end()).count == 1, "the cold repair is already pending")
+        #expect(session.receive(Self.timed(Self.segment, starts: Self.segmentStarts)).isEmpty)
+    }
+
     @Test func theNoiseFloorKeepsOnlyTheNewestFrames() {
         var floor = NoiseFloor(capacity: 3)
         for energy in [1.0, 2, 3, 10, 20] { floor.add(energy) }

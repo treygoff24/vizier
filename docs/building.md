@@ -74,9 +74,9 @@ To try a build without disturbing an installed copy on the same account, do not 
 `scripts/linux/package/` builds the `.deb` and the AppImage inside Docker, on an amd64 Debian 13 host with Swift 6.4:
 
 ```bash
-scripts/linux/package/build-deb.sh 0.2.0         # vizier_0.2.0_amd64.deb
-scripts/linux/package/build-appimage.sh 0.2.0    # Vizier-0.2.0-x86_64.AppImage
-scripts/linux/package/test-install.sh 0.2.0      # installs them in clean containers and takes a test dictation
+scripts/linux/package/build-deb.sh 0.3.0         # vizier_0.3.0_amd64.deb
+scripts/linux/package/build-appimage.sh 0.3.0    # Vizier-0.3.0-x86_64.AppImage
+scripts/linux/package/test-install.sh 0.3.0      # installs them in clean containers and takes a test dictation
 ```
 
 The files land in `scripts/linux/package/out/` (ignored by git). [scripts/linux/package/README.md](../scripts/linux/package/README.md) has the dependencies, the clean-install test and the known follow-ups.

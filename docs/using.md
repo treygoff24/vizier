@@ -88,7 +88,7 @@ Re-run sends a take's saved audio through a mode again, which is useful after yo
 
 - **General.** Hotkey, Open at Login, Show in Dock, Sounds.
 - **Transcription.** Choose the active mode. Shows the Apple speech model's status, with a Download button.
-- **Accounts.** ElevenLabs and Gemini key fields. Save stores the key in the Keychain. Test key makes a harmless read-only request to the provider (no charge) and tells you if the key works. A saved key is never shown again.
+- **Accounts.** ElevenLabs and Gemini key fields. Save stores the key in the Keychain. Test key makes a harmless read-only request to the provider (no charge) and tells you if the key works. A saved key is never shown again. Soniox and AssemblyAI keys have no field yet; store them with `--store-key` (below and in [modes and configuration](modes-and-config.md#soniox-and-assemblyai)).
 - **Words.** Open `vocabulary.txt` and `replacements.txt` in your editor. Changes apply from the next take. See [vocabulary and replacements](vocabulary-and-replacements.md).
 - **About.** Version, license, credits, Check for updates, the setup guide.
 
@@ -99,10 +99,12 @@ The app binary, `Vizier.app/Contents/MacOS/Vizier`, has flags that run once and 
 | Flag | What it does |
 |---|---|
 | `--version` | Prints the version, the build number, and whether the updater is eligible or off. |
-| `--store-key <account>` | Saves an API key to the Keychain. The account is `elevenlabs` or `gemini`. The key must arrive on standard input (`printf '%s' "$KEY" \| Vizier --store-key gemini`); the command refuses to read from a terminal and never prints the key. |
+| `--store-key <account>` | Saves an API key to the Keychain. The account is `elevenlabs`, `gemini`, `soniox` or `assemblyai`. The key must arrive on standard input (`printf '%s' "$KEY" \| Vizier --store-key gemini`); the command refuses to read from a terminal and never prints the key. |
 | `--install-apple-model [locale]` | Downloads Apple's speech model for the locale (default `en-US`), printing progress. The setup guide does the same. |
 | `--transcribe-apple <file> [locale]` | Transcribes one audio file with Apple's on-device recognizer and prints the transcript to standard output, with the engine, seconds and word count. It ignores the active mode and uses no other engine. It needs the speech model installed. See [privacy](privacy.md#command-line-output). |
 | `--import-voiceink [--dry-run] [--no-audio]` | Imports takes from VoiceInk's history (`~/Library/Application Support/com.prakashjoshipax.VoiceInk/default.store`) into Vizier's History. VoiceInk's files are only read; the one exception is that SQLite may create an empty `default.store-shm` sidecar file next to the VoiceInk database when it opens it, even on a `--dry-run`. Each import becomes a finished take with its text, times and models, and its recordings are converted to FLAC so Re-run works on them; `--no-audio` skips the recordings. Takes already imported are skipped, so it is safe to run again, and safe while Vizier runs. `--dry-run` imports nothing and reports how many takes are new and how much audio they hold. |
+| `--bench-live <manifest.jsonl> <results.jsonl> [--engines engine:model:mode,...] [--parallel N]` | Developer tool. Replays recorded 16 kHz mono WAV clips through live engines at real-time pace and records each engine's text and the milliseconds from the end of the audio to its final transcript. Keys come from the Keychain and vocabulary from your config. Transcripts go only to the results file, created readable by you alone, never to the terminal. |
+| `--bench-judge <manifest.jsonl> <results.jsonl> <references.jsonl> [--model m] [--parallel N]` | Developer tool. Sends each clip and the engines' texts to a Gemini model, which writes a reference transcript for scoring to the references file (readable by you alone). `scripts/bench/score.py` then prints error rates and latencies, never text. It uses your Gemini key and sends the audio and texts to Google. |
 | `--render-ui <folder>` | Developer tool. Writes a PNG of every onboarding step and settings pane to the folder, using made-up data, and exits. |
 | `--preview-surfaces <folder> [--open-popover] [--show-strip] [--show-rerun]` | Developer tool. Opens the History window on invented takes in the folder, and optionally the popover, the strip with sample words, or a take with its Re-run attempts. It installs no hotkey and records nothing. |
 

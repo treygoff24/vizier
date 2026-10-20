@@ -31,6 +31,8 @@ How each engine uses the list:
 | Gemini (live and batch) | All terms |
 | ElevenLabs Scribe realtime | The first 50 terms of 20 characters or fewer |
 | ElevenLabs Scribe batch | The first 100 terms shorter than 49 characters and of five words or fewer |
+| Soniox realtime | Terms in order, as context, until they reach 8,000 characters in total |
+| AssemblyAI realtime | The first 100 terms of 50 characters or fewer, as key terms |
 | Apple speech | Nothing; Apple's recognizer does not use the list |
 | Local whisper | Nothing |
 

@@ -404,6 +404,8 @@ enum EngineNames {
         case "gemini-live": "Gemini Live"
         case "gemini-batch": "Gemini batch"
         case "gemini-generate": "Gemini cleanup"
+        case "soniox-realtime": "Soniox"
+        case "assemblyai-realtime": "AssemblyAI"
         case "local-whisper": "Whisper on this Mac"
         case "local-cleanup": "local cleanup"
         case "apple-speech": "Apple"

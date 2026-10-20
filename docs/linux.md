@@ -20,10 +20,10 @@ The daemon does the work. Every other command (`vizier toggle`, `vizier status`,
 
 ## Install
 
-The packages are for x86_64 (amd64) Linux. Download one from the [release page](https://github.com/treygoff24/vizier/releases/latest). For release 0.2.0 the files are:
+The packages are for x86_64 (amd64) Linux. Download one from the [release page](https://github.com/treygoff24/vizier/releases/latest). For release 0.3.0 the files are:
 
-- `vizier_0.2.0_amd64.deb`. Install it with `sudo apt install ./vizier_0.2.0_amd64.deb`. It installs `/usr/bin/vizier`, the sounds, the desktop entry and a systemd user unit, and pulls in the libraries it needs. The helper tools for audio, clipboard and pasting are recommended packages; see [Requirements](#requirements).
-- `Vizier-0.2.0-x86_64.AppImage`. Make it executable (`chmod +x`) and keep it somewhere permanent. It takes the same arguments as the `vizier` command (`./Vizier-0.2.0-x86_64.AppImage setup`), and setup points the service and desktop entry at that path. It uses your system's libraries (libcurl, SQLite, libsystemd, libwayland-client) instead of bundling them.
+- `vizier_0.3.0_amd64.deb`. Install it with `sudo apt install ./vizier_0.3.0_amd64.deb`. It installs `/usr/bin/vizier`, the sounds, the desktop entry and a systemd user unit, and pulls in the libraries it needs. The helper tools for audio, clipboard and pasting are recommended packages; see [Requirements](#requirements).
+- `Vizier-0.3.0-x86_64.AppImage`. Make it executable (`chmod +x`) and keep it somewhere permanent. It takes the same arguments as the `vizier` command (`./Vizier-0.3.0-x86_64.AppImage setup`), and setup points the service and desktop entry at that path. It uses your system's libraries (libcurl, SQLite, libsystemd, libwayland-client) instead of bundling them.
 
 Later releases name their files the same way with their own version.
 
@@ -147,7 +147,7 @@ The reader discards window titles and times out if the compositor stops answerin
 
 ### Installation and first take
 
-1. Install a Vizier build containing this support, plus the capture, conversion
+1. Install Vizier 0.3.0 or later, plus the capture, conversion
    and clipboard tools:
 
    ```bash

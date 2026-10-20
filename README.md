@@ -15,13 +15,13 @@ On the Mac it lives in the menu bar. A small strip at the bottom of the screen s
 
 ![The History window, with a list of takes and the selected take's text](docs/images/history.png)
 
-On the Mac, the default mode, Apple, runs entirely on your Mac and needs no account. On Linux, the default mode, local, sends audio to a whisper.cpp server on your own machine. Cloud modes (ElevenLabs Scribe, Google Gemini) are optional on both and use keys you provide.
+On the Mac, the default mode, Apple, runs entirely on your Mac and needs no account. On Linux, the default mode, local, sends audio to a whisper.cpp server on your own machine. Cloud modes (ElevenLabs Scribe, Google Gemini) are optional on both and use keys you provide; on the Mac you can also add a Soniox or AssemblyAI mode.
 
 ## Install
 
 ### macOS
 
-1. Download the `Vizier-x.y.z.dmg` file (for example `Vizier-0.1.0.dmg`) from the [latest GitHub release](https://github.com/treygoff24/vizier/releases/latest).
+1. Download the `Vizier-x.y.z.dmg` file (for example `Vizier-0.3.0.dmg`) from the [latest GitHub release](https://github.com/treygoff24/vizier/releases/latest).
 2. Open it and drag Vizier to Applications.
 3. Open Vizier and follow the setup guide.
 
@@ -29,10 +29,10 @@ Requirements: macOS 26 or later on Apple Silicon. Vizier runs from the menu bar 
 
 ### Linux
 
-From the [release page](https://github.com/treygoff24/vizier/releases/latest), download one of these (for example for 0.2.0):
+From the [release page](https://github.com/treygoff24/vizier/releases/latest), download one of these (for example for 0.3.0):
 
-- `vizier_0.2.0_amd64.deb`, then `sudo apt install ./vizier_0.2.0_amd64.deb` on Debian or Ubuntu.
-- `Vizier-0.2.0-x86_64.AppImage`: `chmod +x` it and run it with the same arguments as the `vizier` command, for example `./Vizier-0.2.0-x86_64.AppImage setup`.
+- `vizier_0.3.0_amd64.deb`, then `sudo apt install ./vizier_0.3.0_amd64.deb` on Debian or Ubuntu.
+- `Vizier-0.3.0-x86_64.AppImage`: `chmod +x` it and run it with the same arguments as the `vizier` command, for example `./Vizier-0.3.0-x86_64.AppImage setup`.
 
 Then, in a terminal inside your desktop session, run `vizier setup` (the AppImage form above for an AppImage). It checks your desktop, microphone, paste tools and hotkey, and tells you what to install. Requirements, hotkeys per desktop, and local mode: [docs/linux.md](docs/linux.md).
 
@@ -63,12 +63,13 @@ On Linux there is no menu bar or Escape key: press your hotkey (Ctrl+Alt+Space b
 | Local (default on Linux) | A whisper.cpp server on your machine | No |
 | Scribe | ElevenLabs Scribe, in the cloud | ElevenLabs key |
 | Gemini Clean, Gemini SMART | Google Gemini, in the cloud | Gemini key |
+| Soniox, AssemblyAI (Mac, a mode you add) | Soniox or AssemblyAI live streaming, in the cloud | Soniox or AssemblyAI key, stored from a terminal |
 
 A new install sets every starter mode to your Mac's system language. Apple's on-device speech does not cover every language; if yours is not covered, Settings says Unsupported and points you to Scribe or Gemini. Modes are defined in `~/.config/vizier/vizier.jsonc`, so you can edit them, add your own, or combine engines. [docs/modes-and-config.md](docs/modes-and-config.md) lists every setting (it also covers an experimental, unsupported local Whisper engine), and [docs/vocabulary-and-replacements.md](docs/vocabulary-and-replacements.md) covers teaching Vizier your words.
 
 ## Privacy
 
-Apple mode sends nothing off your Mac. Cloud modes send your audio (and the vocabulary list as hints) to the provider you chose; Gemini Clean also sends the transcript text to Google. What a provider then does with it is set by its terms, which bind you as its customer once you add your own key: on Google's unpaid Gemini tier, content may be used to improve its products and read by human reviewers, and ElevenLabs may use content to improve its services unless you opt out in your account. Mac release builds also contact github.com to check for updates. Every take's audio and text is kept on your computer, your keys are kept in the macOS Keychain (on Linux, in the Secret Service keyring or a private file), and Vizier does not write what you say to logs. The full account, with sources, is in [docs/privacy.md](docs/privacy.md).
+Apple mode sends nothing off your Mac. Cloud modes send your audio (and the vocabulary list as hints) to the provider you chose; Gemini Clean also sends the transcript text to Google. What a provider then does with it is set by its terms, which bind you as its customer once you add your own key: on Google's unpaid Gemini tier, content may be used to improve its products and read by human reviewers, ElevenLabs may use content to improve its services unless you opt out in your account, and so may AssemblyAI (Soniox says it does not). Mac release builds also contact github.com to check for updates. Every take's audio and text is kept on your computer, your keys are kept in the macOS Keychain (on Linux, in the Secret Service keyring or a private file), and Vizier does not write what you say to logs. The full account, with sources, is in [docs/privacy.md](docs/privacy.md).
 
 ## Updates
 
@@ -107,7 +108,7 @@ Vizier is licensed under the GNU General Public License, version 3 only (GPL-3.0
 
 Parts of Vizier, including audio capture, the shortcut handling and the paste code, are adapted from VoiceInk. The Archivo font is under the SIL Open Font License, and updates use [Sparkle](https://sparkle-project.org), under its own license. See [NOTICE](NOTICE) for attributions and [THIRD-PARTY-LICENSES](THIRD-PARTY-LICENSES) for the full license texts.
 
-Vizier is not affiliated with or endorsed by Apple, Google, ElevenLabs or VoiceInk.
+Vizier is not affiliated with or endorsed by Apple, Google, ElevenLabs, Soniox, AssemblyAI or VoiceInk.
 
 ## For AI agents
 

@@ -2,16 +2,23 @@
 import Foundation
 import Glibc
 
-/// One loopback connection, with a bounded blocking reader on its own queue. No real audio or keys.
+/// Loopback connections, each with a bounded blocking reader on its own queue. No real audio or keys.
 final class WebSocketTestServer: @unchecked Sendable {
     enum Provider: String, CaseIterable, Sendable { case scribe, gemini }
     enum Behavior: Sendable {
         case happy, refuse(Int), close(UInt16, String), dropDuringSend, dropDuringFinish, silent, neverSetup
+        /// Live segment answers with usable timings; repair peers are independently scripted.
+        case scribeRepairLive
+        case prematureCommit
+        /// Upgrade now, but send session_started only after the test releases the gate.
+        case heldSetup
     }
     struct Frame: Sendable { let opcode: UInt8; let data: Data; let masked: Bool }
     struct Snapshot: Sendable {
         var frames: [Frame] = []
         var upgraded = false
+        var closed = false
+        var waitingForSetup = false
         var droppedDuringPayload = false
         var error: String?
     }
@@ -19,12 +26,18 @@ final class WebSocketTestServer: @unchecked Sendable {
     private let listener: Int32
     private let lock = NSLock()
     private var listenerOpen = true
-    private var client: Int32 = -1
+    private var clients: [Int: Int32] = [:]
+    private var setupGates: [Int: DispatchSemaphore] = [:]
     private var stopped = false
-    private var state = Snapshot()
+    private var states: [Snapshot] = []
+    private var workerError: String?
     private let finished = DispatchSemaphore(value: 0)
 
-    init(provider: Provider, behavior: Behavior) throws {
+    convenience init(provider: Provider, behavior: Behavior) throws {
+        try self.init(provider: provider, behaviors: [behavior])
+    }
+
+    init(provider: Provider, behaviors: [Behavior]) throws {
         let fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
         guard fd >= 0 else { throw POSIXError(.EIO) }
         var address = sockaddr_in()
@@ -33,7 +46,7 @@ final class WebSocketTestServer: @unchecked Sendable {
         let bound = withUnsafePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
         }
-        guard bound == 0, listen(fd, 1) == 0 else { Glibc.close(fd); throw POSIXError(.EIO) }
+        guard bound == 0, listen(fd, 8) == 0 else { Glibc.close(fd); throw POSIXError(.EIO) }
         var length = socklen_t(MemoryLayout<sockaddr_in>.size)
         let named = withUnsafeMutablePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) }
@@ -43,30 +56,60 @@ final class WebSocketTestServer: @unchecked Sendable {
         endpoint = URL(string: "ws://127.0.0.1:\(UInt16(bigEndian: address.sin_port))/test")!
         DispatchQueue(label: "websocket-test-\(address.sin_port)").async { [self] in
             defer { finished.signal() }
-            serve(provider, behavior)
+            let workers = DispatchGroup()
+            for (index, behavior) in behaviors.enumerated() {
+                let client = accept(listener, nil, nil)
+                guard client >= 0 else { break }
+                lock.withLock {
+                    states.append(Snapshot())
+                    clients[index] = client
+                    if stopped { _ = shutdown(client, Int32(SHUT_RDWR)) }
+                }
+                workers.enter()
+                DispatchQueue(label: "websocket-test-peer-\(index)").async { [self] in
+                    defer { workers.leave() }
+                    serve(client, index, provider, behavior)
+                }
+            }
+            lock.withLock { listenerOpen = false; Glibc.close(listener) }
+            workers.wait()
         }
     }
 
-    var snapshot: Snapshot { lock.withLock { state } }
+    var snapshots: [Snapshot] { lock.withLock { states } }
+    var snapshot: Snapshot {
+        lock.withLock {
+            var first = states.first ?? Snapshot()
+            first.error = workerError ?? first.error
+            return first
+        }
+    }
+
+    func releaseSetup(connection: Int) {
+        lock.withLock { setupGates[connection]?.signal() }
+    }
 
     /// Shutdown wakes accept/recv; the worker owns close, avoiding descriptor-reuse races.
     func stop() {
         lock.withLock {
             stopped = true
             if listenerOpen { _ = shutdown(listener, Int32(SHUT_RDWR)) }
-            if client >= 0 { _ = shutdown(client, Int32(SHUT_RDWR)) }
+            for client in clients.values { _ = shutdown(client, Int32(SHUT_RDWR)) }
+            for gate in setupGates.values { gate.signal() }
         }
         if finished.wait(timeout: .now() + 4) == .timedOut {
-            lock.withLock { state.error = "server worker did not stop" }
+            lock.withLock { workerError = "server worker did not stop" }
         }
     }
 
-    private func serve(_ provider: Provider, _ behavior: Behavior) {
-        defer { lock.withLock { listenerOpen = false; Glibc.close(listener) } }
-        let fd = accept(listener, nil, nil)
-        guard fd >= 0 else { return }
-        lock.withLock { client = fd; if stopped { _ = shutdown(fd, Int32(SHUT_RDWR)) } }
-        defer { lock.withLock { client = -1; Glibc.close(fd) } }
+    private func serve(_ fd: Int32, _ index: Int, _ provider: Provider, _ behavior: Behavior) {
+        defer {
+            lock.withLock {
+                clients[index] = nil
+                states[index].closed = true
+                Glibc.close(fd)
+            }
+        }
         // A backstop only: stop() wakes a blocked recv or send with shutdown. A recv that times out
         // fails with EAGAIN and is recorded as a server error, so the bound must outlast any pause a
         // healthy client can take. With the whole suite running on a 2-vCPU runner, the client's
@@ -91,12 +134,28 @@ final class WebSocketTestServer: @unchecked Sendable {
             let key = keyLine.split(separator: ":", maxSplits: 1)[1].trimmingCharacters(in: .whitespaces)
             let acceptKey = Self.sha1(Data((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").utf8)).base64EncodedString()
             try write(fd, Data("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: \(acceptKey)\r\n\r\n".utf8))
-            lock.withLock { state.upgraded = true }
+            lock.withLock { states[index].upgraded = true }
+            if case .heldSetup = behavior {
+                let gate = DispatchSemaphore(value: 0)
+                lock.withLock {
+                    setupGates[index] = gate
+                    states[index].waitingForSetup = true
+                    if stopped { gate.signal() }
+                }
+                guard gate.wait(timeout: .now() + 30) == .success else { throw POSIXError(.ETIMEDOUT) }
+                let shouldStop = lock.withLock {
+                    setupGates[index] = nil
+                    states[index].waitingForSetup = false
+                    return stopped
+                }
+                if shouldStop { return }
+            }
             if provider == .scribe, !isNeverSetup(behavior) { try message(fd, #"{"message_type":"session_started"}"#) }
             // Ping exercises Foundation's automatic pong without using a provider message.
             try frame(fd, opcode: 9, data: Data("probe".utf8))
             var firstAudio = true
             var applicationFrames = 0
+            var commits = 0
             while true {
                 let prefix = try read(fd, count: 2)
                 let opcode = prefix[0] & 15
@@ -109,13 +168,13 @@ final class WebSocketTestServer: @unchecked Sendable {
                 if opcode == 1 || opcode == 2 { applicationFrames += 1 }
                 if case .dropDuringSend = behavior, applicationFrames == (provider == .scribe ? 1 : 3), opcode == 1 {
                     // Drop after the header and masking key, before draining the audio payload.
-                    lock.withLock { state.droppedDuringPayload = true }
+                    lock.withLock { states[index].droppedDuringPayload = true }
                     reset(fd)
                     return
                 }
                 let payload = try read(fd, count: Int(size))
                 let data = Data(payload.enumerated().map { $0.element ^ mask[$0.offset % 4] })
-                lock.withLock { state.frames.append(Frame(opcode: opcode, data: data, masked: masked)) }
+                lock.withLock { states[index].frames.append(Frame(opcode: opcode, data: data, masked: masked)) }
                 if opcode == 8 { try frame(fd, opcode: 8, data: data); return }
                 if opcode == 9 { try frame(fd, opcode: 10, data: data); continue }
                 guard opcode == 1 || opcode == 2 else { continue }
@@ -128,17 +187,27 @@ final class WebSocketTestServer: @unchecked Sendable {
                 let ending = provider == .scribe ? (object["commit"] as? Bool == true) : realtime["activityEnd"] != nil
                 if audio, firstAudio {
                     firstAudio = false
+                    if case .prematureCommit = behavior {
+                        try message(fd, #"{"message_type":"committed_transcript","text":"Premature."}"#)
+                    }
                     if case .close(let code, let reason) = behavior {
                         try frame(fd, opcode: 8, data: Data([UInt8(code >> 8), UInt8(code & 255)]) + Data(reason.utf8))
                         continue // Keep TCP alive so the peer can process the close frame and acknowledge it.
                     }
-                    if case .happy = behavior {
+                    if answersHappy(behavior) {
                         try message(fd, provider == .scribe ? #"{"message_type":"partial_transcript","text":"zorblex"}"# : #"{"serverContent":{"interimInputTranscription":{"text":"zorblex"}}}"#)
                     }
                 }
                 if ending {
+                    commits += 1
+                    if case .scribeRepairLive = behavior {
+                        try message(fd, #"{"message_type":"committed_transcript","text":"Zorblex runs quaxil."}"#)
+                        if commits == 1 {
+                            try message(fd, #"{"message_type":"committed_transcript_with_timestamps","text":"Zorblex runs quaxil.","words":[{"text":"Zorblex","start":1,"end":1.4,"type":"word"},{"text":" ","start":1.4,"end":20,"type":"spacing"},{"text":"runs","start":20,"end":20.4,"type":"word"},{"text":" ","start":20.4,"end":22.4,"type":"spacing"},{"text":"quaxil.","start":22.4,"end":22.8,"type":"word"}]}"#)
+                        }
+                    }
                     if case .dropDuringFinish = behavior { reset(fd); return }
-                    if case .happy = behavior {
+                    if answersHappy(behavior) {
                         if provider == .scribe {
                             try message(fd, #"{"message_type":"committed_transcript","text":"Zorblex."}"#, binary: true)
                         } else {
@@ -151,10 +220,16 @@ final class WebSocketTestServer: @unchecked Sendable {
         } catch {
             // EOF after client settlement is expected; protocol/setup errors remain inspectable.
             if let posix = error as? POSIXError, posix.code == .ECONNRESET { return }
-            lock.withLock { if !stopped { state.error = String(describing: error) } }
+            lock.withLock { if !stopped { states[index].error = String(describing: error) } }
         }
     }
 
+    private func answersHappy(_ behavior: Behavior) -> Bool {
+        switch behavior {
+        case .happy, .heldSetup: true
+        default: false
+        }
+    }
     private func isNeverSetup(_ behavior: Behavior) -> Bool { if case .neverSetup = behavior { true } else { false } }
     private func reset(_ fd: Int32) {
         var value = linger(l_onoff: 1, l_linger: 0)

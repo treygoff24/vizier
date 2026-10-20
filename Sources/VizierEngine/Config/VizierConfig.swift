@@ -183,6 +183,15 @@ public struct VizierConfig: Sendable, Equatable {
         public var finalTimeoutMs: Int
         /// A local engine's server, when not its default. Must be on this Mac.
         public var url: String? = nil
+
+        public init(engine: String, model: String, mode: String, languages: [String], finalTimeoutMs: Int, url: String? = nil) {
+            self.engine = engine
+            self.model = model
+            self.mode = mode
+            self.languages = languages
+            self.finalTimeoutMs = finalTimeoutMs
+            self.url = url
+        }
     }
 
     public struct Fallback: Codable, Sendable, Equatable {
@@ -274,7 +283,7 @@ public final class ConfigStore: @unchecked Sendable {
     /// Gemini accepts at most 1,000 vocabulary terms.
     public static let maxVocabularyTerms = 1_000
     /// The engines this build can run. A mode naming anything else is a config error.
-    public static let liveEngines = ["gemini-live", "elevenlabs-scribe-realtime", "apple-speech"]
+    public static let liveEngines = ["gemini-live", "elevenlabs-scribe-realtime", "soniox-realtime", "assemblyai-realtime", "apple-speech"]
     /// The Scribe transcriber's modes: "no_verbatim" turns on Scribe's own filler and false-start removal.
     public static let scribeModes = ["verbatim", "no_verbatim"]
     public static let batchEngines = ["gemini-batch", "elevenlabs-scribe-batch", "local-whisper", "apple-speech-batch"]
@@ -431,6 +440,13 @@ public final class ConfigStore: @unchecked Sendable {
             }
             if mode.transcriber.engine == "elevenlabs-scribe-realtime", !scribeModes.contains(mode.transcriber.mode) {
                 throw .settings("mode \"\(mode.id)\" gives Scribe the mode \"\(mode.transcriber.mode)\"; Scribe knows \(Self.list(scribeModes))")
+            }
+            // Soniox has no mode setting; it transcribes verbatim, and the filler filter runs after.
+            if mode.transcriber.engine == "soniox-realtime", mode.transcriber.mode != "verbatim" {
+                throw .settings("mode \"\(mode.id)\" gives Soniox the mode \"\(mode.transcriber.mode)\"; Soniox knows \"verbatim\"")
+            }
+            if mode.transcriber.engine == "assemblyai-realtime", mode.transcriber.mode != "verbatim" {
+                throw .settings("mode \"\(mode.id)\" gives AssemblyAI the mode \"\(mode.transcriber.mode)\"; AssemblyAI knows \"verbatim\"")
             }
             if let fallback = mode.fallback, !batchEngines.contains(fallback.engine) {
                 throw .settings("mode \"\(mode.id)\" names fallback engine \"\(fallback.engine)\"; this build knows \(Self.list(batchEngines))")

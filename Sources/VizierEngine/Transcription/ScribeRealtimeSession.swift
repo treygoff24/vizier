@@ -24,6 +24,13 @@ import Foundation
 /// 8 s of audio and keeps the words before it. Without usable timings it carries the whole
 /// previous segment, as it always did.
 ///
+/// Once those timings arrive during the take, a spare session receives that same validated tail
+/// without a commit, followed by new audio as it arrives. A stop inside the 6 s risk window only
+/// commits this already-processed audio; past that window the spare is discarded. Its splice is
+/// frozen at preparation, so a spliced repair carries 8–20 s rather than changing the cut under
+/// the stream. Unusable word timings prefill the whole previous segment instead (at most 34 s).
+/// A failed spare or missing timings falls back to the original cold repair at stop.
+///
 /// The server may close the live connection once it has answered everything (it did after a
 /// `commit_throttled`); that is only a failure while an answer is still owed. It also closes right
 /// after a throttled commit even while an earlier commit's answer is owed, losing that answer
@@ -34,9 +41,15 @@ import Foundation
 public struct ScribeRealtimeSession: Sendable {
     public enum Output: Equatable, Sendable {
         case send(ScribeRealtime.ClientMessage)
-        /// Open a fresh session, send `ScribeRealtimeSession.repairMessages(audio)`, and report
+        /// Commit the prepared repair stream, or open a fresh session and send
+        /// `ScribeRealtimeSession.repairMessages(audio)` if no preparation survived. Report
         /// its committed transcript with `repaired(_:)` or its failure with `repairFailed(_:)`.
         case repair(Data)
+        /// Speculatively send a validated repair tail, without committing it. Subsequent audio
+        /// keeps it current; `repair` commits it on stop, or `cancelRepair` discards it.
+        case prepareRepair(Data)
+        case repairAudio(Data)
+        case cancelRepair
         /// Everything heard so far, for the strip: finished segments, then the current one.
         case transcript(settled: String, pending: String)
         /// Something worth a line in the log.
@@ -100,10 +113,12 @@ public struct ScribeRealtimeSession: Sendable {
     private var streamed = 0
     /// Timed copies of the newest committed segments, oldest first.
     private var timedSegments: [[ScribeRealtime.TimedToken]] = []
+    private var timedAnswersReceived = 0
     private var repair = Repair.none
     /// For a spliced repair, the previous segment's text before the splice, which stays, and
     /// after it, which the repair replaces. Nil when the repair carries the whole segment.
     private var splice: (kept: String, replaced: String)?
+    private var preparedOffset: Int?
     private var frameCarry = Data()
     private var noise = NoiseFloor(capacity: noiseWindowFrames)
     private var quietRun = 0
@@ -153,11 +168,12 @@ public struct ScribeRealtimeSession: Sendable {
             return [.transcript(settled: Self.join(answers), pending: Self.join([text]))]
         case (.streaming, .committed(let text)), (.ending, .committed(let text)):
             answers.append(text)
-            return [.transcript(settled: Self.join(answers), pending: "")] + finishIfReady()
+            return [.transcript(settled: Self.join(answers), pending: "")] + prepareRepairIfPossible() + finishIfReady()
         case (.streaming, .timed(_, let tokens)), (.ending, .timed(_, let tokens)):
+            timedAnswersReceived += 1
             timedSegments.append(tokens)
             if timedSegments.count > 2 { timedSegments.removeFirst() }
-            return []
+            return prepareRepairIfPossible()
         case (.streaming, .commitIgnored), (.ending, .commitIgnored):
             answers.append("")
             return finishIfReady()
@@ -192,6 +208,13 @@ public struct ScribeRealtimeSession: Sendable {
         return [.note("repair failed, keeping the live text: \(reason)")] + finishIfReady()
     }
 
+    /// A speculative socket failed before stop. A cold repair remains available on stop.
+    public mutating func repairPreparationFailed() {
+        guard repair == .none else { return }
+        preparedOffset = nil
+        splice = nil
+    }
+
     /// A repair's messages: the audio in 100 ms chunks, then a commit.
     public static func repairMessages(_ audio: Data) -> [ScribeRealtime.ClientMessage] {
         let chunk = bytesPerSecond / 10
@@ -205,6 +228,15 @@ public struct ScribeRealtimeSession: Sendable {
         streamed += pcm.count
         listen(pcm)
         var out: [Output] = [.send(.audio(pcm))]
+        if preparedOffset != nil {
+            if currentSegment.count >= Self.repairBelowBytes {
+                preparedOffset = nil
+                splice = nil
+                out.append(.cancelRepair)
+            } else {
+                out.append(.repairAudio(pcm))
+            }
+        }
         let uncommitted = currentSegment.count
         let atPause = uncommitted >= Self.commitAtPauseAfterBytes && quietRun >= Self.pauseFrames
         if uncommitted >= Self.commitAlwaysAfterBytes || atPause {
@@ -253,7 +285,12 @@ public struct ScribeRealtimeSession: Sendable {
         if midTakeCommits > 0, currentSegment.count < Self.repairBelowBytes, !(lastCommitAtPause && !speechSinceCommit) {
             repair = .pending
             let audio = previousSegment + currentSegment
-            if let cut = spliceCut() {
+            if let offset = preparedOffset {
+                if splice != nil {
+                    out.append(.note("repair spliced \(offset * 1000 / Self.bytesPerSecond) ms into the previous segment"))
+                }
+                out.append(.repair(audio.subdata(in: offset..<audio.count)))
+            } else if let cut = spliceCut() {
                 splice = (cut.kept, cut.replaced)
                 out.append(.note("repair spliced \(cut.offset * 1000 / Self.bytesPerSecond) ms into the previous segment"))
                 out.append(.repair(audio.subdata(in: cut.offset..<audio.count)))
@@ -262,6 +299,26 @@ public struct ScribeRealtimeSession: Sendable {
             }
         }
         return out + finishIfReady()
+    }
+
+    /// Start processing the repair while the user is still speaking. Freeze the validated
+    /// splice: moving it at stop would mismatch the audio already on the spare socket. The
+    /// tail has at least 8 s of context here, and grows by at most 6 s, well below auto-commit.
+    private mutating func prepareRepairIfPossible() -> [Output] {
+        guard phase == .streaming, midTakeCommits > 0, preparedOffset == nil,
+              currentSegment.count < Self.repairBelowBytes else { return [] }
+        let cut = spliceCut()
+        // Plain and timed answers can arrive in either order, and their text can disagree.
+        // Once both copies of the previous answer arrived, an unsafe splice prefills the whole
+        // previous segment instead, exactly as a cold repair would. Even 28 + 6 s stays below
+        // the server's ~36 s automatic commit. Do not trim audio using untrusted timings.
+        let haveBothAnswers = answers.count >= midTakeCommits && timedAnswersReceived >= midTakeCommits
+        guard cut != nil || haveBothAnswers else { return [] }
+        let offset = cut?.offset ?? 0
+        preparedOffset = offset
+        splice = cut.map { ($0.kept, $0.replaced) }
+        let audio = previousSegment + currentSegment
+        return [.prepareRepair(audio.subdata(in: offset..<audio.count))]
     }
 
     /// Where a spliced repair starts: a byte offset into the previous segment at a word boundary,

@@ -30,7 +30,7 @@ Supported:
 Not supported, so reports will be closed with a pointer:
 
 - Intel Macs, macOS 25 or earlier, iOS, Windows, and Linux on other architectures.
-- Help with a provider's account, billing, quota or API keys (ElevenLabs, Google). Vizier can show you its own error; the provider's side is theirs.
+- Help with a provider's account, billing, quota or API keys (ElevenLabs, Google, Soniox, AssemblyAI). Vizier can show you its own error; the provider's side is theirs.
 - Recognition accuracy that comes from Apple's or a provider's model rather than from Vizier. Try another mode, or add words to `vocabulary.txt` or `replacements.txt`.
 - Forks and their builds (see [CONTRIBUTING.md](CONTRIBUTING.md#forking)).
 - Requests that need the app to send more data off the Mac by default. Vizier's defaults are on-device, no analytics, no account.
