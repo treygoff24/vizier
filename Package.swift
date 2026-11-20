@@ -42,9 +42,9 @@ testTargets.append(
 // Apple ships SQLite3 as a module; on Linux the system library is wrapped here.
 engineDependencies.append("CSQLite")
 engineTestDependencies.append("CSQLite")  // HistoryStoreTests open the database directly
-// PipeCapture creates its pipes with pipe2(O_CLOEXEC), which Glibc does not expose to Swift.
+// Linux process capture uses pipe2(O_CLOEXEC) and waitid(WNOWAIT) through a C target.
 engineDependencies.append("CPipe2")
-targets.append(.systemLibrary(name: "CPipe2", path: "Sources/CPipe2"))
+targets.append(.target(name: "CPipe2"))
 targets.append(
     .systemLibrary(
         name: "CSQLite",
@@ -56,7 +56,7 @@ targets.append(
 // Linux: the `vizier` executable (daemon and CLI) is added here by the package that owns it.
 products.append(.executable(name: "vizier", targets: ["vizier"]))
 targets.append(.target(name: "CCosmicFocus", exclude: ["README.md", "LICENSE"], linkerSettings: [.linkedLibrary("wayland-client")]))
-targets.append(.target(name: "VizierCLI", dependencies: ["VizierEngine"]))
+targets.append(.target(name: "VizierCLI", dependencies: ["VizierEngine", "CPipe2"]))
 // Its sources live in Sources/vizier-linux: a Sources/vizier folder is the same folder as the app's
 // Sources/Vizier on the Mac's case-insensitive disk, so the app would compile the CLI's main.swift.
 targets.append(.executableTarget(name: "vizier", dependencies: ["VizierCLI", "CCosmicFocus"], path: "Sources/vizier-linux"))

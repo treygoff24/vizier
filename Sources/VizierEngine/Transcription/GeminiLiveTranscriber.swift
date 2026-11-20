@@ -121,7 +121,7 @@ public final class GeminiLiveTranscriber: LiveTranscriber, @unchecked Sendable {
                 sending = false
                 guard self.socket === socket else { return }
                 if let error {
-                    settle(.failure(.streamLost(Self.describe(error, on: socket))))
+                    settle(.failure(.streamLost(ProviderFailure.describe(error, on: socket))))
                 } else {
                     pump()
                 }
@@ -136,7 +136,7 @@ public final class GeminiLiveTranscriber: LiveTranscriber, @unchecked Sendable {
                 guard self.socket === socket, outcome == nil else { return }
                 switch result {
                 case .failure(let error):
-                    settle(.failure(.streamLost(Self.describe(error, on: socket))))
+                    settle(.failure(.streamLost(ProviderFailure.describe(error, on: socket))))
                 case .success(let message):
                     handle(message)
                     receive(on: socket)
@@ -156,7 +156,7 @@ public final class GeminiLiveTranscriber: LiveTranscriber, @unchecked Sendable {
         do {
             events = try GeminiLive.decode(frame)
         } catch {
-            log.error("unreadable server frame of \(frame.count, privacy: .public) bytes: \(String(describing: error), privacy: .private)")
+            log.error("unreadable server frame of \(frame.count, privacy: .public) bytes")
             return
         }
         for event in events {
@@ -181,21 +181,5 @@ public final class GeminiLiveTranscriber: LiveTranscriber, @unchecked Sendable {
         onEvent = nil
         waiter?.resume(with: result.mapError { $0 as Error })
         waiter = nil
-    }
-
-    /// The server puts its reason (a bad key, an unknown model) in the close frame, and a refused
-    /// upgrade shows up only as the HTTP status.
-    private static func describe(_ error: Error, on socket: URLSessionWebSocketTask) -> String {
-        var parts: [String] = []
-        if socket.closeCode != .invalid {
-            parts.append("closed \(socket.closeCode.rawValue)")
-            if let reason = socket.closeReason, let text = String(data: reason, encoding: .utf8), !text.isEmpty {
-                parts.append(text)
-            }
-        } else if let http = socket.response as? HTTPURLResponse, http.statusCode != 101 {
-            parts.append("HTTP \(http.statusCode)")
-        }
-        parts.append((error as NSError).localizedDescription)
-        return parts.joined(separator: ": ")
     }
 }

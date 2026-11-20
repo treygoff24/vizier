@@ -21,7 +21,7 @@ On the Mac, the default mode, Apple, runs entirely on your Mac and needs no acco
 
 ### macOS
 
-1. Download the `Vizier-x.y.z.dmg` file (for example `Vizier-0.3.0.dmg`) from the [latest GitHub release](https://github.com/treygoff24/vizier/releases/latest).
+1. Download the `Vizier-x.y.z.dmg` file (for example `Vizier-0.4.0.dmg`) from the [latest GitHub release](https://github.com/treygoff24/vizier/releases/latest).
 2. Open it and drag Vizier to Applications.
 3. Open Vizier and follow the setup guide.
 
@@ -29,10 +29,10 @@ Requirements: macOS 26 or later on Apple Silicon. Vizier runs from the menu bar 
 
 ### Linux
 
-From the [release page](https://github.com/treygoff24/vizier/releases/latest), download one of these (for example for 0.3.0):
+From the [release page](https://github.com/treygoff24/vizier/releases/latest), download one of these (for example for 0.4.0):
 
-- `vizier_0.3.0_amd64.deb`, then `sudo apt install ./vizier_0.3.0_amd64.deb` on Debian or Ubuntu.
-- `Vizier-0.3.0-x86_64.AppImage`: `chmod +x` it and run it with the same arguments as the `vizier` command, for example `./Vizier-0.3.0-x86_64.AppImage setup`.
+- `vizier_0.4.0_amd64.deb`, then `sudo apt install ./vizier_0.4.0_amd64.deb` on Debian or Ubuntu.
+- `Vizier-0.4.0-x86_64.AppImage`: `chmod +x` it and run it with the same arguments as the `vizier` command, for example `./Vizier-0.4.0-x86_64.AppImage setup`.
 
 Then, in a terminal inside your desktop session, run `vizier setup` (the AppImage form above for an AppImage). It checks your desktop, microphone, paste tools and hotkey, and tells you what to install. Requirements, hotkeys per desktop, and local mode: [docs/linux.md](docs/linux.md).
 
@@ -61,7 +61,7 @@ On Linux there is no menu bar or Escape key: press your hotkey (Ctrl+Alt+Space b
 |---|---|---|
 | Apple (default on the Mac) | On your Mac, with Apple's speech recognizer | No |
 | Local (default on Linux) | A whisper.cpp server on your machine | No |
-| Scribe | ElevenLabs Scribe, in the cloud | ElevenLabs key |
+| Scribe | ElevenLabs Scribe v3 Live, in the cloud | ElevenLabs key |
 | Gemini Clean, Gemini SMART | Google Gemini, in the cloud | Gemini key |
 | Soniox, AssemblyAI (Mac, a mode you add) | Soniox or AssemblyAI live streaming, in the cloud | Soniox or AssemblyAI key, stored from a terminal |
 

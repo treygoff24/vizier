@@ -72,6 +72,8 @@ public struct TakeRemarks: Sendable, Equatable {
     public static let noFlac = "The live transcript failed and the audio could not be prepared for batch. The recording is saved."
     public static let noAudio = "The mic never delivered audio. Check the input device."
     public static let micFailed = "The mic could not start. Check the input device."
+    public static let captureEnded = "The mic stopped unexpectedly. Nothing was pasted."
+    public static let recordingWriteFailed = "The recording could not be fully saved. Nothing was pasted."
     public static let noFolder = "The take could not be saved, so nothing was recorded."
     public static let cleanupLate = "The cleanup pass did not finish in time, so the raw transcript was pasted."
     public static let cleanupFailed = "The cleanup pass failed, so the raw transcript was pasted."
@@ -86,6 +88,7 @@ public struct TakeRemarks: Sendable, Equatable {
     private static let focusMovedBase = "You switched apps after the take stopped, so nothing was pasted."
     private static let secureFieldBase = "A password field had focus, so nothing was pasted."
     private static let secureInputBase = "Secure input was on and the focused field could not be read, so nothing was pasted."
+    public static let clipboardChangedBase = "The clipboard changed before the paste, so nothing was pasted."
 
     public static func batchRepeated(words: Int, durationMs: Int) -> String {
         "The batch transcript has \(words) words for \(spoken(durationMs)) of audio, so it may contain repeated text."
@@ -135,6 +138,7 @@ public struct TakeRemarks: Sendable, Equatable {
         case PasteDecision.focusMoved: return focusMoved(onClipboard: clip)
         case PasteDecision.secureField: return secureField(onClipboard: clip)
         case PasteDecision.secureInput: return secureInput(onClipboard: clip)
+        case PasteDecision.clipboardChanged: return Self.clipboardChangedBase + suffix(clip)
         default: return noPasteTarget(onClipboard: clip)
         }
     }

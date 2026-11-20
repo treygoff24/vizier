@@ -72,23 +72,21 @@ public enum ScribeBatch {
         try JSONDecoder().decode(Wire.Response.self, from: body).text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// The error's message from either shape the API uses (`detail` as an object or a string),
-    /// or the start of the body.
-    public static func errorMessage(from body: Data) -> String {
-        if let error = try? JSONDecoder().decode(Wire.ObjectError.self, from: body) {
-            return [error.detail.status, error.detail.message].compactMap { $0 }.joined(separator: ": ")
-        }
-        if let error = try? JSONDecoder().decode(Wire.StringError.self, from: body) { return error.detail }
-        return String(decoding: body.prefix(300), as: UTF8.self)
+    /// Keep recognized error names only; details may repeat submitted vocabulary.
+    public static func errorMessage(from body: Data) -> String? {
+        let status = (try? JSONDecoder().decode(Wire.ObjectError.self, from: body))?.detail.status
+        return ProviderFailure.knownName(status, among: [
+            "invalid_api_key", "missing_permissions", "quota_exceeded", "rate_limited",
+            "invalid_request", "internal_error",
+        ])
     }
 
     private enum Wire {
         struct Response: Decodable { var text: String }
         struct ObjectError: Decodable {
-            struct Detail: Decodable { var status: String?; var message: String? }
+            struct Detail: Decodable { var status: String? }
             var detail: Detail
         }
-        struct StringError: Decodable { var detail: String }
     }
 }
 

@@ -167,7 +167,7 @@ nonisolated enum BenchJudgeCommand {
                 let (data, response) = try await URLSession.shared.data(for: request)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 guard status == 200 else {
-                    reference.error = "HTTP \(status): \(GeminiBatch.errorMessage(from: data))"
+                    reference.error = "HTTP \(status): \(GeminiBatch.errorMessage(from: data) ?? "request failed")"
                     if status == 429 || status >= 500 { try? await Task.sleep(for: .seconds(5 * attempt)); continue }
                     return reference
                 }

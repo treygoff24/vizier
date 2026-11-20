@@ -65,6 +65,7 @@ public enum PasteDecision: Sendable, Equatable {
     public static let focusMoved = "you switched apps after the take stopped"
     public static let secureField = "a password field had focus"
     public static let secureInput = "secure input was on and the focused field could not be read"
+    public static let clipboardChanged = "the clipboard changed before the paste"
     public static let secureSubrole = "AXSecureTextField"
 
     /// The secure-input checks, shared by `decide` and `finalCheck`. A readable focused element

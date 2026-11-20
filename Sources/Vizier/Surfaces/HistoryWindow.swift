@@ -184,7 +184,7 @@ struct HistoryRow: View {
             Text((take.destination ?? "—").uppercased()).font(Face.row).lineLimit(1).frame(width: 72, alignment: .leading)
             Text(model.modeCode(take.modeID)).font(Face.row).frame(width: 30, alignment: .leading)
             Text(take.words.map { $0.formatted() } ?? "—").font(Face.row).frame(width: 44, alignment: .leading)
-            StatusPlate(take.outcome, small: true).frame(width: 92, alignment: .leading)
+            StatusPlate(take, small: true).frame(width: 92, alignment: .leading)
             Text(rowText).font(Face.rowText).foregroundStyle(take.bestText == nil && take.rerunText == nil ? Ink.ink3 : Ink.ink2).lineLimit(1)
             Spacer(minLength: 0)
         }
@@ -247,7 +247,7 @@ struct HistoryDetail: View {
             Text(HistoryBoard.dayLabel(take.startedAt) + dateSuffix(take.startedAt)).font(Face.body).foregroundStyle(Ink.ink2)
                 .frame(maxHeight: 40, alignment: .bottom)
             Spacer(minLength: 8)
-            StatusPlate(take.outcome)
+            StatusPlate(take)
         }
     }
 
@@ -378,9 +378,10 @@ struct HistoryDetail: View {
     }
 
     static func textHeading(_ take: TakeRecord) -> String {
-        switch take.outcome {
+        if take.isPractice { return "Practice transcript" }
+        return switch take.outcome {
         case .pasted, .rerouted: "Pasted"
-        case .held: "Held on the clipboard"
+        case .held: take.pasteMethod == "clipboard" ? "Held on the clipboard" : "Not pasted"
         case .failed: take.bestText == nil ? "Not pasted" : "Not pasted: what was heard"
         case .cancelled: "Cancelled"
         case .recording, .finalizing: "In progress"
@@ -389,7 +390,7 @@ struct HistoryDetail: View {
 
     /// One plain sentence for why a take did not simply paste, from its stored reason.
     static func reason(_ take: TakeRecord) -> String? {
-        guard let reason = take.outcomeReason, !reason.isEmpty else { return nil }
+        guard !take.isPractice, let reason = take.outcomeReason, !reason.isEmpty else { return nil }
         switch reason {
         case "batch": return "The live stream dropped, so the saved audio went through batch."
         case "settled words": return "The live transcript did not finish, so the settled words were pasted."
@@ -400,6 +401,7 @@ struct HistoryDetail: View {
         case PasteDecision.vizierHadFocus, PasteDecision.legacyDictumHadFocus: return "Vizier itself had focus, so nothing was pasted. The text went to the clipboard."
         case PasteDecision.secureField: return "A password field had focus, so nothing was pasted. The text went to the clipboard."
         case PasteDecision.secureInput: return "Secure input was on and the focused field could not be read, so nothing was pasted. The text went to the clipboard."
+        case PasteDecision.clipboardChanged: return TakeRemarks.clipboardChangedBase + TakeRemarks.mac.noClipboardSuffix
         default:
             if take.outcome == .held { return "No text field had focus, so nothing was pasted. The text went to the clipboard." }
             return reason
@@ -458,7 +460,7 @@ struct WaveformBars: View {
     let player: TakePlayer
 
     var body: some View {
-        TimelineView(.animation(paused: !playing)) { _ in
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !playing)) { _ in
             let progress = playing ? player.progress : 0
             Canvas { context, size in
                 let mid = size.height / 2

@@ -122,6 +122,7 @@ public final class LinuxPresentation: TakePresentation {
     private let modeName: @MainActor () -> String
     private var mode = ""
     private var finalizing = false
+    private var interruptionRemark: String?
     /// Called with true when a take leaves idle and false when it returns to it.
     public var onActiveChanged: (@MainActor (Bool) -> Void)?
 
@@ -158,6 +159,7 @@ public final class LinuxPresentation: TakePresentation {
     public func begin(destination: String, platform: String, level: @escaping @Sendable () -> Float, seconds: @escaping @Sendable () -> Double) {
         mode = modeName()
         finalizing = false
+        interruptionRemark = nil
         post("Vizier: recording", modeLine)
     }
 
@@ -173,8 +175,17 @@ public final class LinuxPresentation: TakePresentation {
         post("Vizier: finalizing", modeLine)
     }
 
+    public func recordingInterrupted(remark: String) {
+        interruptionRemark = remark
+        post("Vizier: finalizing", remark)
+    }
+
     public func reroutingToBatch() {
-        post("Vizier: finalizing", "Rerouting to batch. " + modeLine)
+        let body = [interruptionRemark, "Rerouting to batch.", modeLine]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        post("Vizier: finalizing", body)
     }
 
     public func finish(_ result: TakeResult, remark: String?) {

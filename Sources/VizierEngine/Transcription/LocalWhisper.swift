@@ -95,7 +95,7 @@ public struct LocalWhisperTranscriber: BatchTranscriber {
         request.httpBody = LocalWhisper.multipartBody(audio: bytes, filename: audio.lastPathComponent, boundary: boundary)
         let (body, response) = try await perform(request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else { throw BatchError.http(status: status, message: String(decoding: body.prefix(300), as: UTF8.self)) }
+        guard status == 200 else { throw BatchError.http(status: status) }
         let text = try LocalWhisper.transcript(from: body)
         let report = BatchReport(
             route: .local, bytes: bytes.count, uploadSeconds: 0, transcriptionSeconds: (clock.now - started).seconds,

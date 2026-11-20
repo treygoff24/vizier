@@ -46,10 +46,10 @@ public struct CosmicKeySender: KeySender {
 
     public func probe() async -> AdapterProbe { await YdotoolKeySender(env: env).probe() }
 
-    public func send(_ chord: PasteChord) async throws {
+    public func send(_ chord: PasteChord, stillWanted: @escaping @MainActor @Sendable () -> Bool) async throws {
         guard let window = await focus.focusedWindow(), let terminal = window.isTerminal else {
             throw AdapterError("COSMIC focus is unavailable; paste the clipboard manually")
         }
-        try await YdotoolKeySender(env: env).send(terminal ? .ctrlShiftV : .ctrlV)
+        try await YdotoolKeySender(env: env).send(terminal ? .ctrlShiftV : .ctrlV, stillWanted: stillWanted)
     }
 }

@@ -759,8 +759,31 @@ final class TSRig {
         #expect(received.withLock { $0 } == ["practice words"])
         #expect(rig.paster.pasted.isEmpty)
         let record = try rig.row(id)
-        #expect(record.outcome == .pasted && record.pasteMethod == "practice")
+        #expect(record.outcome == .pasted && record.pasteMethod == "practice" && record.isPractice)
+        #expect(record.destinationAtPaste == nil && record.destination == nil && record.pasteMs == nil && !record.didPaste)
         #expect(rig.presentation.finishes.first?.result == .pasted)
+    }
+
+    @Test(arguments: [true, false])
+    func changingPracticeDuringTranscriptionDoesNotRedirectTheTake(_ beganInPractice: Bool) async throws {
+        let rig = try TSRig(mode: .testBatchCloud)
+        let gate = TSGate()
+        let batch = TSFakeBatch(.text("Zorblex"), gate: gate)
+        rig.kit.setBatch("gemini-batch", batch)
+        var practiceText: [String] = []
+        let sink: (String) -> Void = { practiceText.append($0) }
+        if beganInPractice { rig.session.practiceSink = sink }
+        let id = try await rig.record()
+        _ = try rig.session.stop()
+        let enteredBatch = await rig.until { batch.callCount == 1 }
+        rig.session.practiceSink = beganInPractice ? nil : sink
+        await gate.open()
+        await rig.session.settled()
+        try #require(enteredBatch)
+
+        #expect(try rig.row(id).isPractice == beganInPractice)
+        #expect(practiceText == (beganInPractice ? ["Zorblex"] : []))
+        #expect(rig.paster.pasted == (beganInPractice ? [] : ["Zorblex "]))
     }
 
     // MARK: Cancel
@@ -1177,27 +1200,98 @@ final class TSRig {
         #expect(rig.presentation.finishes[0].result == .failed)
     }
 
-    @Test func aWriteFailureMidTakeKeepsTheEarlierAudioAndTheTakeStillDelivers() async throws {
+    @Test func aWriteFailureMidTakeKeepsTheEarlierAudioAndHoldsTheText() async throws {
         let rig = try TSRig(recordingFactory: { try TSFlakyRecordingFile(TakeStore.createRecordingFile($0), failAppendsFrom: 1) })
         rig.kit.queue(TSFakeLive(.final("words survive")))
         let id = try await rig.record(seconds: 1)
         rig.capture.feed(seconds: 1)
         try await rig.stopAndSettle()
 
-        #expect(rig.paster.pasted == ["words survive "])
+        #expect(rig.paster.pasted.isEmpty)
         let record = try rig.row(id)
-        #expect(record.outcome == .pasted)
+        #expect(record.outcome == .held)
+        #expect(record.outcomeReason == TakeRemarks.recordingWriteFailed)
+        #expect(record.bestText == "words survive")
         #expect(record.audioPath?.pathExtension == "flac")
         #expect(abs(Double(try #require(record.durationMs)) - 1_000) < 5)
     }
 
-    @Test func aCloseFailureKeepsTheRecordingAndTheTakeStillDelivers() async throws {
+    @Test(arguments: [true, false])
+    func aCaptureFailureHoldsSettledTextAndAudioEvenIfTheUserStops(_ userStops: Bool) async throws {
+        let rig = try TSRig()
+        let live = TSFakeLive(.fail(.streamLost("synthetic disconnect")))
+        rig.kit.queue(live)
+        rig.kit.setBatch("gemini-batch", TSFakeBatch(.failAny("synthetic failure")))
+        let id = try await rig.record()
+        live.emit(.transcript(settled: "Zorblex", pending: "Quaxil"))
+        try #require(await rig.until { rig.presentation.words.contains { !$0.isEmpty } })
+
+        rig.capture.emitLate(.failed("synthetic capture failure"))
+        // No MainActor hop between failure and the manual stop: the recorder must already know.
+        if userStops { _ = try rig.session.stop() }
+        try #require(await rig.until(timeout: 1) { rig.presentation.finishes.count == 1 })
+        await rig.session.settled()
+
+        let record = try rig.row(id)
+        #expect(rig.presentation.finishes.count == 1)
+        #expect(rig.sounds.played.filter { $0 == .stop }.count == 1)
+        #expect(record.outcome == .held)
+        #expect(record.outcomeReason == TakeRemarks.captureEnded)
+        #expect(record.bestText == "Zorblex")
+        let audio = try #require(record.audioPath)
+        #expect(FileManager.default.fileExists(atPath: audio.path))
+        #expect(rig.paster.pasted.isEmpty)
+    }
+
+    @Test func aQueuedCaptureFailureForAnEarlierTakeCannotStopTheNextTake() async throws {
+        let rig = try TSRig()
+        rig.kit.queue(TSFakeLive(.hang))
+        rig.kit.queue(TSFakeLive(.final("Quaxil")))
+        try await rig.record()
+        // The recorder receives the event now, but its delivery to the session is queued.
+        rig.capture.emitLate(.failed("synthetic capture failure"))
+        _ = try rig.session.cancel()
+        let next = try rig.session.start()
+        rig.capture.feed(seconds: 1)
+        try #require(await rig.until(timeout: 1) { rig.session.phase == .recording })
+        try await rig.stopAndSettle()
+        #expect(rig.paster.pasted == ["Quaxil "])
+        let id = try #require(next.takeID)
+        #expect(try rig.row(id).outcome == .pasted)
+    }
+
+    @Test(arguments: ["Zorblex", ""])
+    func aBatchTakeTranscribesOnlyTheWrittenPrefixAfterAnAppendFailure(_ text: String) async throws {
+        let rig = try TSRig(mode: .testBatchCloud, recordingFactory: {
+            try TSFlakyRecordingFile(TakeStore.createRecordingFile($0), failAppendsFrom: 1)
+        })
+        let batch = TSFakeBatch(.text(text))
+        rig.kit.setBatch("gemini-batch", batch)
+        let id = try await rig.record(seconds: 1)
+        rig.capture.feed(seconds: 2)
+        try await rig.stopAndSettle()
+
+        let record = try rig.row(id)
+        #expect(batch.callCount == 1)
+        let audio = try #require(record.audioPath)
+        #expect(FileManager.default.fileExists(atPath: audio.path))
+        #expect(abs(Double(try #require(record.durationMs)) - 1_000) < 5)
+        #expect(TakeStore.duration(of: audio) == 1)
+        #expect(rig.paster.pasted.isEmpty)
+        #expect(record.outcome == (text.isEmpty ? .failed : .held))
+        #expect((record.bestText ?? "") == text)
+    }
+
+    @Test func aCloseFailureKeepsTheRecordingAndHoldsTheText() async throws {
         let rig = try TSRig(recordingFactory: { try TSFlakyRecordingFile(TakeStore.createRecordingFile($0), failClose: true) })
         rig.kit.queue(TSFakeLive(.final("words survive")))
         let id = try await rig.record(seconds: 1)
         try await rig.stopAndSettle()
-        #expect(rig.presentation.finishes.first?.result == .pasted)
-        #expect(try rig.row(id).audioPath?.pathExtension == "flac")
+        #expect(rig.presentation.finishes.first?.result == .held)
+        #expect(rig.paster.pasted.isEmpty)
+        let record = try rig.row(id)
+        #expect(record.bestText == "words survive")
+        #expect(record.audioPath?.pathExtension == "flac")
     }
 
     @Test func aTakeThatHeardNothingSaysNoSpeech() async throws {

@@ -79,7 +79,9 @@ public enum ProcessRunner {
     ///
     /// A grandchild that outlives the helper and still holds the pipes does not stall the call:
     /// output is read until the helper has exited, then whatever is already in the pipe.
-    public static func run(
+    // Inherit the caller's isolation through the handoff to the worker thread. A paste can
+    // check cancellation on the main actor and launch without yielding between the two.
+    public nonisolated(nonsending) static func run(
         _ argv: [String],
         stdin: Data? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,

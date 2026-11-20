@@ -83,6 +83,12 @@ final class FakeFileOpener: FileOpening {
 /// editor. Opening one first writes the starter files if they are missing, so the button always
 /// has something to open.
 struct WordsFiles {
+    enum VocabularyCheck {
+        case invalidConfig
+        case empty
+        case checked(mode: String, engine: String, omitted: [String])
+    }
+
     let config: ConfigStore
     let opener: any FileOpening
 
@@ -90,6 +96,15 @@ struct WordsFiles {
     func openReplacements() { open(config.replacementsURL) }
     /// vizier.jsonc, for the Transcription pane's broken-file banner. A missing file gets the starter.
     func openSettings() { open(config.settingsURL) }
+
+    func checkVocabulary() -> VocabularyCheck {
+        let load = config.load()
+        guard load.errors.isEmpty else { return .invalidConfig }
+        guard !load.config.vocabulary.isEmpty else { return .empty }
+        let mode = load.config.activeMode
+        return .checked(mode: mode.name, engine: EngineNames.name(mode.transcriber.engine),
+                        omitted: Engines.omittedVocabulary(in: load.config))
+    }
 
     private func open(_ url: URL) {
         try? config.writeStarterFilesIfMissing()

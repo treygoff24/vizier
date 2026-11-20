@@ -11,7 +11,7 @@ public actor PortalRemoteDesktop: KeySender, ClipboardWriter {
     private var clipboardEnabled = false
     private var keyboardEnabled = false
     private var preparing = false
-    private var sending = false
+    private var sending: Task<Void, Error>?
     private var publishing = false
     private var generation = 0
     private var observationID = UUID()
@@ -20,8 +20,6 @@ public actor PortalRemoteDesktop: KeySender, ClipboardWriter {
     private static let mimeTypes = ["text/plain;charset=utf-8", "text/plain", "UTF8_STRING", "STRING", "TEXT"]
     private var ownerEvents = 0
     private var publication: (id: UUID, after: Int, sink: AsyncStream<Bool>.Continuation)?
-    private var heldKeys: [Int32] = []
-    private var heldMethod = "NotifyKeyboardKeysym"
     private var observers: [Task<Void, Never>] = []
     private var subscriptions: [DBusSignals] = []
 
@@ -43,7 +41,7 @@ public actor PortalRemoteDesktop: KeySender, ClipboardWriter {
     }
 
     public func prepare() async throws {
-        guard !preparing && !sending && !publishing else { throw PortalFailure.busy }
+        guard !preparing && sending == nil && !publishing else { throw PortalFailure.busy }
         preparing = true
         defer { preparing = false }
         await stop()
@@ -109,8 +107,9 @@ public actor PortalRemoteDesktop: KeySender, ClipboardWriter {
         guard observationID == observation else { return }
         let old = session
         invalidate()
+        // The sender owns the whole chord, including releases after an in-flight key-down.
+        _ = await sending?.result
         if let old {
-            await releaseKeys(handle: old)
             if closeSession { await client.close(old) }
         }
     }
@@ -134,7 +133,8 @@ public actor PortalRemoteDesktop: KeySender, ClipboardWriter {
         for observer in observers { observer.cancel() }
         for subscription in subscriptions { subscription.cancel() }
         observers.removeAll(); subscriptions.removeAll()
-        if let old { await releaseKeys(handle: old); await client.close(old) }
+        _ = await sending?.result
+        if let old { await client.close(old) }
         session = nil
         await client.releaseIfOwned()
     }
@@ -229,34 +229,38 @@ public actor PortalRemoteDesktop: KeySender, ClipboardWriter {
             return true
         }
     }
-    private func releaseKeys(handle: String) async {
-        let keys = heldKeys.reversed()
-        let method = heldMethod
-        heldKeys.removeAll() // take ownership before suspending, so stop/invalidate cannot double-release
-        for key in keys {
-            _ = try? await client.call("org.freedesktop.portal.RemoteDesktop", method, [.objectPath(handle), .dictionary([:]), .int32(key), .uint32(0)])
+    public func send(_ chord: PasteChord, stillWanted: @escaping @MainActor @Sendable () -> Bool) async throws {
+        guard let handle = session, keyboardEnabled else { throw PortalFailure.notPrepared }
+        guard sending == nil else { throw PortalFailure.busy }
+        try Task.checkCancellation()
+        let epoch = generation
+        let task = Task { try await sendChord(chord, handle: handle, epoch: epoch, stillWanted: stillWanted) }
+        sending = task
+        defer { sending = nil }
+        try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
         }
     }
-    public func send(_ chord: PasteChord) async throws {
-        guard let handle = session, keyboardEnabled else { throw PortalFailure.notPrepared }
-        guard !sending else { throw PortalFailure.busy }
-        try Task.checkCancellation()
-        sending = true
-        defer { sending = false }
-        let epoch = generation
+
+    private func sendChord(_ chord: PasteChord, handle: String, epoch: Int, stillWanted: @MainActor @Sendable () -> Bool) async throws {
         func sequence(keysym: Bool) -> [(Int32, UInt32)] {
             let modifiers: [Int32] = chord == .ctrlShiftV ? (keysym ? [0xffe3, 0xffe1] : [29, 42]) : (keysym ? [0xffe3] : [29])
             let v: Int32 = keysym ? 0x76 : 47
             return modifiers.map { ($0, UInt32(1)) } + [(v, 1), (v, 0)] + modifiers.reversed().map { ($0, UInt32(0)) }
         }
         var events = sequence(keysym: true)
-        heldMethod = "NotifyKeyboardKeysym"
+        var heldKeys: [Int32] = []
+        var heldMethod = "NotifyKeyboardKeysym"
         var index = 0
         var attempted = false
         var failed = false
+        var withdrawn = false
         while index < events.count {
-            if generation != epoch || !keyboardEnabled || Task.isCancelled { failed = true; break }
             let (key, state) = events[index]
+            if state == 1, !(await stillWanted()) { withdrawn = true; break }
+            if generation != epoch || !keyboardEnabled || Task.isCancelled { failed = true; break }
             if state == 1 { heldKeys.append(key) } // also release a key whose reply is ambiguous
             attempted = true
             do {
@@ -273,9 +277,16 @@ public actor PortalRemoteDesktop: KeySender, ClipboardWriter {
                 failed = true; break
             }
         }
-        await releaseKeys(handle: handle) // every exit path, including cancellation/invalidation
+        let keys = heldKeys.reversed()
+        for key in keys { // every exit path, including cancellation/invalidation
+            _ = try? await client.call("org.freedesktop.portal.RemoteDesktop", heldMethod, [.objectPath(handle), .dictionary([:]), .int32(key), .uint32(0)])
+        }
+        if withdrawn { throw PasteWithdrawn() }
         if failed {
-            if generation == epoch { await invalidate(observation: observationID) }
+            if generation == epoch {
+                invalidate()
+                await client.close(handle)
+            }
             status = "Paste may have reached the desktop; no fallback retry; run vizier setup"
             if !attempted { throw PortalFailure.closed }
         }

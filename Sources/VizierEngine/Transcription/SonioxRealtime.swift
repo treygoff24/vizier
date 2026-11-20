@@ -90,13 +90,13 @@ public enum SonioxRealtime {
         /// The server ended the stream after an empty frame; it closes the socket next.
         case finished
         /// An error response; the server closes the socket right after it.
-        case failed(type: String, message: String)
+        case failed(code: Int?)
     }
 
     public static func decode(_ frame: Data) throws -> ServerEvent {
         let message = try JSONDecoder().decode(Wire.Response.self, from: frame)
-        if let text = message.error_message ?? message.error_code.map({ "error \($0)" }) {
-            return .failed(type: message.error_type ?? "error", message: text)
+        if message.error_code != nil || message.error_message != nil {
+            return .failed(code: message.error_code)
         }
         if message.finished == true { return .finished }
         return .tokens((message.tokens ?? []).map { Token($0.text, isFinal: $0.is_final ?? false) })
@@ -122,7 +122,6 @@ public enum SonioxRealtime {
             var tokens: [WireToken]?
             var finished: Bool?
             var error_code: Int?
-            var error_type: String?
             var error_message: String?
         }
 
@@ -177,9 +176,9 @@ public struct SonioxRealtimeSession: Sendable {
     public mutating func receive(_ event: SonioxRealtime.ServerEvent) -> [Output] {
         guard phase != .done else { return [] }
         switch event {
-        case .failed(let type, let message):
+        case .failed(let code):
             phase = .done
-            return [.failed("\(type): \(message)")]
+            return [.failed(code.map { "server error \($0)" } ?? "server error")]
         case .finished:
             // Only an empty frame ends the stream, and Vizier sends none before `<fin>`.
             return finish(reason: "the server finished the stream before the final")

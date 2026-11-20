@@ -399,7 +399,7 @@ public final class HALCapture: @unchecked Sendable {
     }
 
     private func switchToDefault(reason: String, force: Bool) {
-        guard running else { return }
+        guard running, active.load(ordering: .acquiring) else { return }
         guard let target = try? Self.defaultInputDevice() else {
             log.error("\(reason, privacy: .public), but there is no default input now")
             return
@@ -416,8 +416,12 @@ public final class HALCapture: @unchecked Sendable {
         } catch {
             log.error("switch failed: \(String(describing: error), privacy: .private); returning to the previous input")
             onEvent?(.deviceSwitchFailed(String(describing: error)))
-            if previous != 0, (try? configure(device: previous)) != nil {
-                try? run(device: previous)
+            do {
+                try configure(device: previous)
+                try run(device: previous)
+            } catch {
+                teardownUnit()
+                onEvent?(.failed(String(describing: error)))
             }
         }
     }

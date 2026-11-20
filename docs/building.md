@@ -9,7 +9,7 @@ Vizier builds on two platforms from one package: the macOS app, and the Linux `v
 - macOS 26 or later on Apple Silicon.
 - Xcode or the Command Line Tools with Swift 6.2 or later. The package declares `swift-tools-version: 6.2` and `macOS 26` as the deployment target.
 - Which SDK you build against decides one thing: the menu bar item. With the macOS 27 SDK (Xcode 27, as releases are built), the app uses the macOS 27 expanded menu bar interface when it runs on macOS 27, which brings menu bar keyboard navigation and menu tracking. With the macOS 26 SDK, that code is left out, and the popover opens from a plain button action on every macOS version.
-- Sparkle 2.10.0, which Swift Package Manager fetches.
+- Sparkle 2.10.1, which Swift Package Manager fetches.
 
 **Linux (the daemon and CLI):** Swift 6.4, installed with [swiftly](https://www.swift.org/install/linux/). The Linux packages are built for x86_64 only. Docker is needed for `scripts/linux/ci.sh` and the packages.
 
@@ -25,8 +25,8 @@ open build/Vizier.app
 
 ## Build and test on Linux
 
-Install `libwayland-dev` on the build host for the bundled COSMIC focus reader,
-including package builds (Debian/Ubuntu: `sudo apt install libwayland-dev`).
+Install the SQLite and Wayland development headers on the build host, including
+for package builds (Debian/Ubuntu: `sudo apt install libsqlite3-dev libwayland-dev`).
 
 ```bash
 swift build -c release --product vizier    # .build/release/vizier
@@ -74,9 +74,9 @@ To try a build without disturbing an installed copy on the same account, do not 
 `scripts/linux/package/` builds the `.deb` and the AppImage inside Docker, on an amd64 Debian 13 host with Swift 6.4:
 
 ```bash
-scripts/linux/package/build-deb.sh 0.3.0         # vizier_0.3.0_amd64.deb
-scripts/linux/package/build-appimage.sh 0.3.0    # Vizier-0.3.0-x86_64.AppImage
-scripts/linux/package/test-install.sh 0.3.0      # installs them in clean containers and takes a test dictation
+scripts/linux/package/build-deb.sh 0.4.0         # vizier_0.4.0_amd64.deb
+scripts/linux/package/build-appimage.sh 0.4.0    # Vizier-0.4.0-x86_64.AppImage
+scripts/linux/package/test-install.sh 0.4.0      # installs them in clean containers and takes a test dictation
 ```
 
 The files land in `scripts/linux/package/out/` (ignored by git). [scripts/linux/package/README.md](../scripts/linux/package/README.md) has the dependencies, the clean-install test and the known follow-ups.

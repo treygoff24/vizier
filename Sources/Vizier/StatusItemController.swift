@@ -93,6 +93,7 @@ final class StatusItemController: NSObject {
         foldFrom = fold
         foldStart = CACurrentMediaTime()
         let link = button.displayLink(target: self, selector: #selector(stepFold(_:)))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
         link.add(to: .main, forMode: .common)
         displayLink = link
     }

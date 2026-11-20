@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Usage: build-appimage.sh [VERSION]. Hotkey portals need the .desktop installed
-# in the user's applications directory; AppImage does not install it. Vizier
-# setup must do that (currently an application follow-up outside this lane).
+# Usage: build-appimage.sh [VERSION]. Run the resulting AppImage with 'setup'
+# to register its desktop entry and point the user service at the AppImage.
 set -euo pipefail
 # shellcheck source=scripts/linux/package/common.sh
 . "$(dirname -- "$0")/common.sh"

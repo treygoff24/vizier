@@ -68,8 +68,8 @@ public final class TakeSession: TakeControl {
 
     /// Times the take's stop and paste, so a typed Cmd+V near them can be logged.
     public var pasteWatch = TypedPasteWatch()
-    /// Set only while onboarding's Practice step is on screen: a finished take's text goes here
-    /// instead of being pasted, since Vizier never pastes into itself. Everywhere else it is nil.
+    /// Set only while onboarding's Practice step is on screen. A take snapshots this destination
+    /// before starting the recorder and keeps it even if the guide closes.
     public var practiceSink: ((String) -> Void)?
 
     /// The current take's words, for the strip.
@@ -92,6 +92,7 @@ public final class TakeSession: TakeControl {
         let cleanup: Cleanup?
         let removeFillers: Bool
         let replacer: WordReplacer?
+        let practiceSink: ((String) -> Void)?
         let startedAt: TimeInterval
         let ledger: TakeLedger
         let live: LiveText
@@ -364,8 +365,7 @@ public final class TakeSession: TakeControl {
     private func start(releasedAt: TimeInterval) {
         let load = config.load()
         for error in load.errors {
-            log.error("config: \(error.publicSummary, privacy: .public); running the last good config")
-            log.error("config detail: \(error.description, privacy: .private)")
+            log.error("config: \(error.publicSummary, privacy: .public); using the last good value for that file")
         }
         if !load.errors.isEmpty { presentation.raiseAlert() }
 
@@ -388,6 +388,7 @@ public final class TakeSession: TakeControl {
             return
         }
         let id = files.id
+        let practiceSink = practiceSink
         let mode = load.config.activeMode
         let destination = focus.destinationName()
         let draft = TakeDraft(
@@ -420,7 +421,7 @@ public final class TakeSession: TakeControl {
         })
         do {
             try recorder.start(files, onChunk: { chunk in transcriber?.send(chunk) }, onEvent: { [weak self] event in
-                Task { @MainActor in self?.captureEvent(event) }
+                Task { @MainActor in self?.captureEvent(event, take: id) }
             })
         } catch {
             transcriber?.cancel()
@@ -437,7 +438,8 @@ public final class TakeSession: TakeControl {
             files: files, modeID: mode.id, transcriber: transcriber, missingKey: liveKey == nil ? liveProvider?.name : nil,
             batches: batches, batchOnly: mode.isBatchOnly,
             cleanup: cleanup, removeFillers: FillerFilter.applies(to: mode),
-            replacer: makeReplacer(load.config), startedAt: releasedAt, ledger: ledger, live: LiveText())
+            replacer: makeReplacer(load.config), practiceSink: practiceSink,
+            startedAt: releasedAt, ledger: ledger, live: LiveText())
         words = WordLine()
         phase = .arming
         log.notice("take \(id, privacy: .public) started \(Self.ms(ProcessInfo.processInfo.systemUptime - releasedAt), privacy: .public) ms after the key-down")
@@ -471,10 +473,11 @@ public final class TakeSession: TakeControl {
         }
     }
 
-    private func captureEvent(_ event: CaptureEvent) {
+    private func captureEvent(_ event: CaptureEvent, take id: String) {
+        guard let take, take.files.id == id, phase == .arming || phase == .recording else { return }
         switch event {
         case .signal:
-            guard phase == .arming, let take else { return }
+            guard phase == .arming else { return }
             phase = .recording
             presentation.setLive()
             // On the first real audio, not the tap: the ping means the mic is actually listening.
@@ -487,6 +490,7 @@ public final class TakeSession: TakeControl {
             log.error("capture could not follow the input change: \(reason, privacy: .private)")
         case .failed(let reason):
             log.error("capture ended by itself: \(reason, privacy: .private)")
+            stop(releasedAt: ProcessInfo.processInfo.systemUptime)
         }
     }
 
@@ -513,17 +517,22 @@ public final class TakeSession: TakeControl {
 
     private func stop(releasedAt: TimeInterval) {
         guard let take else { return }
-        // Where the user is at the stop tap; the paste goes nowhere else.
-        // Started now (capture still stops at once); delivery awaits the answer before it pastes.
-        let focus = focus
-        let appAtStop = Task { await focus.focusAtStop() }
         // Stopping the recorder hands the last partial chunk to the transcriber before finish().
         let summary = recorder.stop()
+        let recordingRemark = Self.joined([
+            summary.captureFailed ? TakeRemarks.captureEnded : nil,
+            summary.writeError != nil ? TakeRemarks.recordingWriteFailed : nil,
+        ])
+        let interruption = recordingRemark.isEmpty ? nil : recordingRemark
+        // Capture the focus at stop only if delivery can paste.
+        let focus = focus
+        let appAtStop = Task { interruption == nil ? await focus.focusAtStop() : nil }
         sounds.play(.stop)
         let heardSignal = phase != .arming
         phase = .finalizing
         pasteWatch.takeStopped(at: releasedAt)
         presentation.stopped(onTime: (take.batchOnly ? Self.localAllowance : 1) + (take.cleanup.map { $0.local ? Self.localCleanupAllowance : Self.cleanupAllowance } ?? 0))
+        if let interruption { presentation.recordingInterrupted(remark: interruption) }
         log.notice("take \(take.files.id, privacy: .public) stopped: \(summary.seconds, format: .fixed(precision: 2), privacy: .public) s captured, \(summary.capture.deviceSwitches, privacy: .public) input switches, \(summary.capture.droppedBuffers, privacy: .public) dropped buffers, signal \(heardSignal, privacy: .public)")
         if let error = summary.writeError {
             log.error("recording write failed mid-take: \(error, privacy: .private)")
@@ -532,7 +541,8 @@ public final class TakeSession: TakeControl {
         let audio = saveAudio(take.files, ledger: take.ledger, capturedSeconds: summary.seconds)
         let takeID = take.files.id
         deliveries[takeID] = Task {
-            await deliver(take, stoppedAt: releasedAt, appAtStop: appAtStop, heardSignal: heardSignal, audio: audio)
+            await deliver(take, stoppedAt: releasedAt, appAtStop: appAtStop, heardSignal: heardSignal,
+                          interruption: interruption, audio: audio)
             deliveries[takeID] = nil
         }
     }
@@ -544,7 +554,8 @@ public final class TakeSession: TakeControl {
     ///
     /// Every text is written to the take's ledger the moment it exists, before any `guard` that
     /// can return: a take cancelled mid-flight keeps the text it had.
-    private func deliver(_ take: Take, stoppedAt: TimeInterval, appAtStop: Task<Int32?, Never>, heardSignal: Bool, audio: Task<SavedAudio?, Never>) async {
+    private func deliver(_ take: Take, stoppedAt: TimeInterval, appAtStop: Task<Int32?, Never>, heardSignal: Bool,
+                         interruption: String?, audio: Task<SavedAudio?, Never>) async {
         let id = take.files.id
         let ledger = take.ledger
         var text: String?
@@ -624,7 +635,7 @@ public final class TakeSession: TakeControl {
         guard self.take?.files.id == id else { return }
         guard let text else {
             log.error("take \(id, privacy: .public) failed; its audio is saved")
-            fail(remark, ledger: ledger, takeID: id)
+            fail(Self.joined([interruption, remark]), ledger: ledger, takeID: id)
             return
         }
         // Cleanup runs before replacements, so the rules still catch what it missed (TR, CL, RP).
@@ -660,29 +671,38 @@ public final class TakeSession: TakeControl {
         ledger.finalText(output, replacementMs: take.replacer == nil ? nil : Self.ms(ProcessInfo.processInfo.systemUptime - replaceStarted))
         guard !output.isEmpty else {
             log.notice("take \(id, privacy: .public) heard nothing to paste")
-            fail(heardSignal ? TakeRemarks.noSpeech : TakeRemarks.noAudio, ledger: ledger, takeID: id)
+            let silence = heardSignal ? TakeRemarks.noSpeech : TakeRemarks.noAudio
+            fail(Self.joined([interruption, silence]), ledger: ledger, takeID: id)
             return
         }
         // The final replaces the live guesses on the board: every word settled, as it pastes.
         words.finish(output)
         presentation.setWords(words.plates)
-        let outcome: PasteOutcome
-        // A practice take shows its text in onboarding and sends no keystroke, so history records
-        // it as practice rather than as a pasted keystroke.
-        let practiced = practiceSink != nil
-        if let practiceSink {
-            practiceSink(output)
-            outcome = PasteOutcome(kind: .pasted, method: "keystroke", reason: nil, onClipboard: false, permissionMissing: false, logCode: "keystroke")
-        } else {
-            let focusAtStop = await appAtStop.value
-            outcome = await paster.paste(PasteText.separated(output), focusAtStop: focusAtStop) { [weak self] in self?.take?.files.id == id }
+        if let interruption {
+            pasteWatch.endedWithoutPaste()
+            ledger.conclude(.held, reason: interruption, destination: nil, pasteMethod: nil, pasteMs: nil)
+            conclude(.held, remark: interruption + remarks.noClipboardSuffix)
+            return
         }
+        if let practiceSink = take.practiceSink {
+            practiceSink(output)
+            pasteWatch.endedWithoutPaste()
+            log.notice("take \(id, privacy: .public) finished onboarding practice via \(route, privacy: .public)")
+            // The history schema groups completed deliveries under pasted; the practice
+            // method identifies the onboarding delivery, and there are no paste details.
+            ledger.conclude(.pasted, reason: nil, destination: nil, pasteMethod: "practice", pasteMs: nil)
+            guard self.take?.files.id == id else { return }
+            conclude(.pasted, remark: nil)
+            return
+        }
+        let focusAtStop = await appAtStop.value
+        let outcome = await paster.paste(PasteText.separated(output), focusAtStop: focusAtStop) { [weak self] in self?.take?.files.id == id }
         let pastedAt = ProcessInfo.processInfo.systemUptime
         switch outcome.kind {
         case .pasted: pasteWatch.pasted(at: pastedAt)
         case .failed, .held, .withdrawn: pasteWatch.endedWithoutPaste()
         }
-        log.notice("take \(id, privacy: .public) paste \(practiced ? "practice" : outcome.logCode, privacy: .public) from \(route, privacy: .public), \(cleanupNote, privacy: .public): final \(Self.ms(finalAt - stoppedAt), privacy: .public) ms and paste \(Self.ms(pastedAt - stoppedAt), privacy: .public) ms after the stop tap, \(output.count, privacy: .public) characters")
+        log.notice("take \(id, privacy: .public) paste \(outcome.logCode, privacy: .public) from \(route, privacy: .public), \(cleanupNote, privacy: .public): final \(Self.ms(finalAt - stoppedAt), privacy: .public) ms and paste \(Self.ms(pastedAt - stoppedAt), privacy: .public) ms after the stop tap, \(output.count, privacy: .public) characters")
         // History first: a cancel that already landed keeps its outcome (the ledger's first
         // terminal call wins), and one that lands later finds this one recorded.
         let reroute: String? = viaBackup ? (offlineAnswered ? "local whisper" : "batch") : usedSettledWords ? "settled words" : cleanupRemark != nil ? "raw text" : nil
@@ -690,7 +710,7 @@ public final class TakeSession: TakeControl {
         switch outcome.kind {
         case .pasted:
             ledger.conclude(reroute == nil ? .pasted : .rerouted, reason: reroute, destination: focus.destinationName(),
-                            pasteMethod: practiced ? "practice" : outcome.method, pasteMs: practiced ? nil : Self.ms(pastedAt - stoppedAt))
+                            pasteMethod: outcome.method, pasteMs: Self.ms(pastedAt - stoppedAt))
         case .failed:
             // The text is on the clipboard when it says so, so the take is held there rather than lost.
             ledger.conclude(.held, reason: outcome.permissionMissing ? "accessibility not granted" : "paste failed", destination: focus.destinationName(), pasteMethod: clipboardMethod, pasteMs: nil)

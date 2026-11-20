@@ -13,7 +13,7 @@ Vizier needs Accessibility access to see the hotkey and to paste. A copy you bui
 Only one copy can run at a time, and Dictum (Vizier's name until October 2026) counts. The message names the other copy. Quit it from its menu bar icon, then open Vizier again. Vizier never quits the other copy itself, since it may be in the middle of a take.
 
 **Vizier says it could not move your Dictum data, and quits.**
-On its first launch Vizier renames `~/Library/Application Support/Dictum` to `…/Vizier`, `~/.config/dictum` to `~/.config/vizier`, and `dictum.jsonc` to `vizier.jsonc`. When a rename fails, or both the old and the new one already exist, Vizier stops without changing anything, and the message names the folders. Keep the one you want at the new name and move the other out of the way, or fix the permission the message names, then open Vizier again; it tries the move on every launch.
+On its first launch Vizier renames `~/Library/Application Support/Dictum` to `…/Vizier`, `~/.config/dictum` to `~/.config/vizier`, and `dictum.jsonc` to `vizier.jsonc`. When a rename fails, or both the old and the new path hold data, Vizier stops and names the problem paths. Any moves that finished are kept, and existing files and folders are never overwritten. Keep the data you want at the new path and move the other copy out of the way, or fix the permission the message names. Open Vizier again to retry the remaining moves.
 
 **The hotkey does nothing while the screen is locked or in another login session.**
 That is intended: Vizier ignores the hotkey when the screen is locked or the session is not the one at the console.

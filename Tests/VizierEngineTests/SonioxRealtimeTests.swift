@@ -26,7 +26,7 @@ import Testing
         #expect(try SonioxRealtime.decode(Data(tokens.utf8)) == .tokens([.init("Zor", isFinal: true), .init("blex", isFinal: false)]))
         #expect(try SonioxRealtime.decode(Data(#"{"tokens":[],"finished":true}"#.utf8)) == .finished)
         let error = #"{"tokens":[],"error_code":401,"error_type":"unauthenticated","error_message":"Incorrect API key provided."}"#
-        #expect(try SonioxRealtime.decode(Data(error.utf8)) == .failed(type: "unauthenticated", message: "Incorrect API key provided."))
+        #expect(try SonioxRealtime.decode(Data(error.utf8)) == .failed(code: 401))
     }
 
     @Test func aTakeEndsAtTheFinMarkerAfterSilenceAndAFinalize() {
@@ -49,6 +49,6 @@ import Testing
         #expect(closed.liveClosed("closed 1006") == [.failed("closed 1006")])
         #expect(closed.liveClosed("again") == [])
         var errored = SonioxRealtimeSession()
-        #expect(errored.receive(.failed(type: "unauthenticated", message: "bad key")) == [.failed("unauthenticated: bad key")])
+        #expect(errored.receive(.failed(code: 401)) == [.failed("server error 401")])
     }
 }

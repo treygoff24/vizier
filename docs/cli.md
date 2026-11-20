@@ -62,7 +62,9 @@ actor at daemon start (waited for about 3 s at most before the socket is publish
 command `keys_changed` (args `{}`, result `{"refreshing":boolean}`, which returns at once and
 starts a background re-read; a daemon that is down is ignored). A take that starts before the
 first read finishes reports its key as unavailable. `set` stores in Secret Service
-when it takes the key, else in the file, and says which. `--json` results:
+when it takes the key, or in the file if Secret Service is absent or has no copy of the key.
+If the keyring already has the key and cannot replace it, unlock the keyring and retry.
+`--json` results:
 `set` `{"key","storedIn":"secret-service"|"file","note"?}`; `status`
 `{"keys":[{"key","name","resolvedFrom":null|"environment"|"secret-service"|"file","presentIn":[...],"errors":[...],"environmentVariable"}],"secretService":{"available":bool},"file":path}`;
 `delete` `{"key","deleted":true,"note"?}`. Errors: `empty_key`, `invalid_key`, `tty_unsafe`,
@@ -230,8 +232,9 @@ With a down daemon, that check reports daemon down. Startup readiness is otherwi
 not exposed by TakeStatus; integration can refine that information later.
 The library check initializes FoundationNetworking and uses the mapped libcurl's
 `dlopen(RTLD_NOLOAD)` and `curl_version_info`, rather than the `curl` executable.
-Versions below 8.11 fail the live-engine floor check; batch engines remain
-available. Presence of pw-record does not prove microphone or desktop operation.
+Versions below 8.11 fail the check when the active mode uses live transcription.
+If only inactive modes use live transcription, the check warns. In a batch-only
+configuration, loading an older libcurl passes. Presence of pw-record does not prove microphone or desktop operation.
 All checks are offline; config/history checks do not edit settings or history rows (SQLite may create its WAL index). When the daemon
 is down or its socket is unsafe, doctor falls back to local checks so it can
 explain the recovery path; help is also local. The in-daemon socket check validates

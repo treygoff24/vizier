@@ -88,7 +88,7 @@ enum StartupGate {
             return Message(
                 title: "Vizier could not move your Dictum data",
                 body: lines.joined(separator: "\n\n")
-                    + "\n\nVizier has not started and changed nothing, so nothing is lost. Open Vizier again when this is sorted out.",
+                    + "\n\nVizier kept any moves that finished and did not overwrite any existing files or folders. Open Vizier again after fixing the problems above.",
                 items: outcomes.flatMap(paths(of:)).map { home + "/" + $0 })
         }
     }

@@ -79,12 +79,12 @@ public struct WtypeKeySender: KeySender {
         }
     }
 
-    public func send(_ chord: PasteChord) async throws {
+    public func send(_ chord: PasteChord, stillWanted: @escaping @MainActor @Sendable () -> Bool) async throws {
         let keys: [String]
         switch chord {
         case .ctrlV: keys = ["-M", "ctrl", "-k", "v", "-m", "ctrl"]
         case .ctrlShiftV: keys = ["-M", "ctrl", "-M", "shift", "-k", "v", "-m", "shift", "-m", "ctrl"]
         }
-        try await Helper.send(["wtype"] + keys, environment: env.variables)
+        try await Helper.send(["wtype"] + keys, environment: env.variables, stillWanted: stillWanted)
     }
 }

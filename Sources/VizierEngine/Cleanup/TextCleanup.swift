@@ -98,7 +98,7 @@ public enum TextCleanup {
 
 public enum CleanupError: Error, Equatable, Sendable, CustomStringConvertible {
     case timedOut
-    case http(status: Int, message: String)
+    case http(status: Int, message: String? = nil)
     /// Gemini refused the prompt; the reason is its block reason.
     case blocked(String)
     /// The answer stopped for a reason other than finishing (a token limit or a safety stop).
@@ -107,7 +107,7 @@ public enum CleanupError: Error, Equatable, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case .timedOut: "timed out"
-        case .http(let status, let message): "HTTP \(status): \(message)"
+        case .http(let status, let message): ProviderFailure.http(status, detail: message)
         case .blocked(let reason): "prompt blocked: \(reason)"
         case .unfinished(let reason): "stopped early: \(reason)"
         }

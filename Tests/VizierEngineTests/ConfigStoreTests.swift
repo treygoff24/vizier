@@ -42,6 +42,75 @@ import Testing
         #expect(try String(contentsOf: store.vocabularyURL, encoding: .utf8) == "Zorblex\n")
     }
 
+    @Test func invalidUTF8PreservesOnlyTheBrokenFilesLastGoodValue() throws {
+        try store.writeStarterFilesIfMissing()
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let modes = VizierConfig.Settings().modes
+        let ordinaryMode = VizierConfig.Settings().mode
+        func select(_ id: String) throws {
+            try encoder.encode(VizierConfig.Settings(mode: id, modes: modes)).write(to: store.settingsURL)
+        }
+
+        try select("scribe")
+        try write(store.vocabularyURL, "Zorblex\n")
+        try write(store.replacementsURL, "zorbex -> Zorblex\n")
+        let good = store.load()
+        try #require(good.errors.isEmpty && good.config.activeMode.id == "scribe")
+        let invalid = Data([0xff])
+
+        try invalid.write(to: store.replacementsURL)
+        try select(ordinaryMode)
+        let badReplacements = store.load()
+        #expect(badReplacements.errors.count == 1)
+        if case .replacements = badReplacements.errors.first {} else { Issue.record("missing replacements error") }
+        #expect(badReplacements.config.activeMode.id == ordinaryMode)
+        #expect(badReplacements.config.replacements == good.config.replacements)
+
+        try write(store.replacementsURL, "quaxel -> Quaxil\n")
+        try invalid.write(to: store.vocabularyURL)
+        let badVocabulary = store.load()
+        #expect(badVocabulary.errors.count == 1)
+        if case .vocabulary = badVocabulary.errors.first {} else { Issue.record("missing vocabulary error") }
+        #expect(badVocabulary.config.vocabulary == ["Zorblex"])
+        #expect(badVocabulary.config.replacements != good.config.replacements)
+
+        try write(store.vocabularyURL, "Quaxil\n")
+        try invalid.write(to: store.settingsURL)
+        let badSettings = store.load()
+        #expect(badSettings.errors.count == 1)
+        if case .settings = badSettings.errors.first {} else { Issue.record("missing settings error") }
+        #expect(badSettings.config.settings == badReplacements.config.settings)
+        #expect(badSettings.config.vocabulary == ["Quaxil"])
+    }
+
+    @Test(arguments: ["transcriber", "fallback", "offline_fallback", "cleanup"])
+    func eachLocalEndpointRejectsPortsOutsideTheTCPRange(_ slot: String) throws {
+        func settings(_ suffix: String) -> String {
+            let url = #""url": "http://127.0.0.1\#(suffix)/v1/audio","#
+            let primary = slot == "transcriber" ? url : ""
+            let fallback = """
+            "\(slot)": {\(url) "engine": "local-whisper", "model": "m", "mode": "verbatim"},
+            """
+            let cleanup = """
+            "cleanup": {\(url) "engine": "local-cleanup", "model": "m", "timeout_ms": 1000},
+            """
+            let extra = slot == "transcriber" ? "" : (slot == "cleanup" ? cleanup : fallback)
+            return """
+            {"mode":"l","modes":[{\(extra) "id":"l","name":"L","transcriber":{
+            \(primary) "engine":"local-whisper","model":"m","mode":"verbatim","languages":[],"final_timeout_ms":1000}}]}
+            """
+        }
+        for valid in ["", ":1", ":65535"] {
+            _ = try ConfigStore.parseSettings(settings(valid))
+        }
+        for invalid in [":0", ":65536", ":9999999999999999999999999999"] {
+            #expect(throws: ConfigError.self, "\(slot) accepted \(invalid)") {
+                try ConfigStore.parseSettings(settings(invalid))
+            }
+        }
+    }
+
     @Test func readsCommentsTrailingCommasAndSnakeCaseKeys() throws {
         try write(store.settingsURL, """
         // comment
@@ -57,7 +126,7 @@ import Testing
         #expect(load.config.activeMode.fallback == nil)
     }
 
-    @Test func aBrokenFileKeepsTheLastGoodConfig() throws {
+    @Test func aBrokenFileKeepsOnlyItsOwnLastGoodValue() throws {
         try write(store.vocabularyURL, "Zorblex\nQuaxil\n")
         try write(store.replacementsURL, "zorbex -> Zorblex\n")
         let good = store.load()
@@ -67,13 +136,15 @@ import Testing
         try write(store.vocabularyURL, "Changed\n")
         let broken = store.load()
         #expect(broken.errors.count == 1)
-        #expect(broken.config == good.config)
+        #expect(broken.config.settings == good.config.settings)
+        #expect(broken.config.vocabulary == ["Changed"])
 
         try FileManager.default.removeItem(at: store.settingsURL)
         try write(store.replacementsURL, "no arrow here\n")
         let brokenAgain = store.load()
         #expect(brokenAgain.errors == [.replacements("replacements.txt line 1: missing \"->\" between the words and their replacement")])
-        #expect(brokenAgain.config == good.config)
+        #expect(brokenAgain.config.vocabulary == ["Changed"])
+        #expect(brokenAgain.config.replacements == good.config.replacements)
 
         try write(store.replacementsURL, "zorbex -> Zorblex\n")
         let fixed = store.load()

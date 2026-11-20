@@ -66,7 +66,7 @@ import Testing
     @Test func aFailedUploadThrowsItsStatusAndTranscribesNothing() async throws {
         let audio = try Fixture.flac(seconds: 1)
         let server = Fixture.server(start: 403)
-        await #expect(throws: BatchError.upload(status: 403, message: "INTERNAL: Synthetic failure.")) {
+        await #expect(throws: BatchError.upload(status: 403, message: "INTERNAL")) {
             try await Fixture.transcriber(server, maxInlineBytes: 0).transcribe(audio)
         }
         #expect(await server.requests.map(\.url) == [GeminiFiles.uploadEndpoint])
@@ -75,7 +75,7 @@ import Testing
     @Test func aFailedTranscriptionStillDeletesTheUpload() async throws {
         let audio = try Fixture.flac(seconds: 1)
         let server = Fixture.server(interact: 500)
-        await #expect(throws: BatchError.http(status: 500, message: "INTERNAL: Synthetic failure.")) {
+        await #expect(throws: BatchError.http(status: 500, message: "INTERNAL")) {
             try await Fixture.transcriber(server, maxInlineBytes: 0).transcribe(audio)
         }
         let last = await server.requests.last
@@ -222,7 +222,7 @@ import Testing
     @Test func aFailedFinalizeThrowsItsStatusAndTranscribesNothing() async throws {
         let audio = try Fixture.flac(seconds: 1)
         let server = Fixture.server(upload: 500)
-        await #expect(throws: BatchError.upload(status: 500, message: "INTERNAL: Synthetic failure.")) {
+        await #expect(throws: BatchError.upload(status: 500, message: "INTERNAL")) {
             try await Fixture.transcriber(server, maxInlineBytes: 0).transcribe(audio)
         }
         #expect(await server.requests.map(\.url!.absoluteString) == [GeminiFiles.uploadEndpoint.absoluteString, Fixture.uploadURL])

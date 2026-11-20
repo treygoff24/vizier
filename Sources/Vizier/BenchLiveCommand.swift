@@ -21,7 +21,7 @@ nonisolated enum BenchLiveCommand {
 
     static let defaultEngines = [
         Engine(engine: "soniox-realtime", model: "stt-rt-v5", mode: "verbatim"),
-        Engine(engine: "elevenlabs-scribe-realtime", model: "scribe_v2_realtime", mode: "verbatim"),
+        Engine(engine: "elevenlabs-scribe-realtime", model: ScribeRealtime.defaultModel, mode: "verbatim"),
         Engine(engine: "gemini-live", model: "gemini-3.5-transcribe-live", mode: "VERBATIM"),
     ]
 

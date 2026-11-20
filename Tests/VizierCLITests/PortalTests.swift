@@ -365,6 +365,74 @@ struct PortalTests {
         await remote.stop()
     }
 
+    @Test @MainActor func withdrawalAfterControlDownReleasesItWithoutSendingV() async throws {
+        let bus = try await bus()
+        let directory = try state()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let remote = PortalRemoteDesktop(connection: bus, stateDirectory: directory)
+        try await remote.prepare()
+        var checked = false
+        await #expect(throws: PasteWithdrawn.self) {
+            try await remote.send(.ctrlV, stillWanted: {
+                defer { checked = true }
+                return !checked
+            })
+        }
+        let withdrawn = try await snapshot(bus)
+        #expect(withdrawn.keys == [[0xffe3, 1], [0xffe3, 0]])
+        #expect(withdrawn.held.isEmpty)
+        #expect(withdrawn.key_methods.allSatisfy { $0 == "NotifyKeyboardKeysym" })
+        #expect(withdrawn.closed.isEmpty)
+
+        try await remote.send(.ctrlV)
+        let next = try await snapshot(bus)
+        #expect(Array(next.keys.dropFirst(withdrawn.keys.count)) == [[0xffe3, 1], [0x76, 1], [0x76, 0], [0xffe3, 0]])
+        #expect(next.held.isEmpty)
+        await remote.stop()
+    }
+
+    @Test func stoppingThePortalAwaitsTheHeldKeysBeforeClosing() async throws {
+        let bus = try await bus()
+        let directory = try state()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let remote = PortalRemoteDesktop(connection: bus, stateDirectory: directory)
+        try await remote.prepare()
+        let paused = AsyncStream<Void>.makeStream()
+        let resume = DispatchSemaphore(value: 0)
+        let wanted = PortalCounter()
+        let send = Task {
+            try await remote.send(.ctrlV, stillWanted: {
+                wanted.toggle()
+                guard wanted.toggles == 2 else { return true }
+                // Hold the synchronous cancellation callback between Ctrl down and V down.
+                paused.continuation.yield(())
+                _ = resume.wait(timeout: .now() + 3)
+                return true
+            })
+        }
+        defer { resume.signal(); send.cancel() }
+        var checkpoints = paused.stream.makeAsyncIterator()
+        let watchdog = Task {
+            try? await Task.sleep(for: .seconds(2))
+            paused.continuation.finish()
+        }
+        let pausedBeforeV = await checkpoints.next() != nil
+        watchdog.cancel()
+        try #require(pausedBeforeV)
+        try #require(try await snapshot(bus).held == [0xffe3])
+
+        let stop = Task { await remote.stop() }
+        // Once stop disables the portal, send can resume and must release Ctrl before Close.
+        try await eventually { !(await remote.probe()).available }
+        resume.signal()
+        await stop.value
+        _ = try await send.value
+        let result = try await snapshot(bus)
+        #expect(result.keys == [[0xffe3, 1], [0xffe3, 0]])
+        #expect(result.closed.contains { $0.contains("/session/") })
+        #expect(result.close_held.isEmpty)
+    }
+
     @Test func receivedFileDescriptorIsCloseOnExec() async throws {
         let bus = try await bus()
         let values = try await bus.call(interface: "net.praxient.vizier.Mock", member: "FD")

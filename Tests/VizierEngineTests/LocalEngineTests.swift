@@ -43,7 +43,7 @@ private final class ScriptedLink: BatchTranscriber, @unchecked Sendable {
     @Test func whisperFailsLoudOnAnErrorStatus() async throws {
         let server = StubServer { _ in (500, [:], Data("model not loaded".utf8)) }
         let url = try Fixture.flac(seconds: 1)
-        await #expect(throws: BatchError.http(status: 500, message: "model not loaded")) {
+        await #expect(throws: BatchError.http(status: 500)) {
             try await LocalWhisperTranscriber(url: LocalWhisper.defaultURL, perform: { await server.answer($0) }).transcribeReporting(url)
         }
     }
@@ -93,7 +93,7 @@ private final class ScriptedLink: BatchTranscriber, @unchecked Sendable {
             try await LocalCleaner(url: LocalCleanup.defaultURL, model: "q", perform: { await cut.answer($0) }).clean("Zorblex the quaxil")
         }
         let down = StubServer { _ in (503, [:], Data("busy".utf8)) }
-        await #expect(throws: CleanupError.http(status: 503, message: "busy")) {
+        await #expect(throws: CleanupError.http(status: 503)) {
             try await LocalCleaner(url: LocalCleanup.defaultURL, model: "q", perform: { await down.answer($0) }).clean("Zorblex")
         }
     }

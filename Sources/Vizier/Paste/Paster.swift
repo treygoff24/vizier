@@ -47,6 +47,7 @@ enum Paster {
                 case PasteDecision.focusMoved: "held-focus-moved"
                 case PasteDecision.secureField: "held-secure-field"
                 case PasteDecision.secureInput: "held-secure-input"
+                case PasteDecision.clipboardChanged: "held-clipboard-changed"
                 default: "held-no-target"
                 }
             case .failed: failedForAccessibility ? "failed-accessibility" : "failed"
@@ -72,30 +73,59 @@ enum Paster {
     private static let focusQueryTimeout: Float = 0.3
     private static let log = Logger(subsystem: "net.praxient.dictum", category: "paste")
 
+    struct Dependencies {
+        let pasteboard: NSPasteboard
+        let checkTarget: (ContinuousClock.Instant, pid_t?) -> PasteDecision
+        let finalCheck: (pid_t?) -> PasteDecision
+        let hasAccessibility: () -> Bool
+        let prepareShortcut: () -> Shortcut
+
+        static var system: Self {
+            Self(pasteboard: .general, checkTarget: Paster.checkTarget, finalCheck: Paster.finalCheck,
+                 hasAccessibility: AXIsProcessTrusted, prepareShortcut: Paster.prepareShortcut)
+        }
+    }
+
+    enum Shortcut {
+        case commandV((CommandVEvent) -> Void)
+        case appleScript
+        case unavailable
+    }
+
+    enum CommandVEvent { case commandDown, vDown, vUp, commandUp }
+
     /// Puts `text` on the clipboard, where it stays, and pastes it into the focused app. The
     /// paste is the only keystroke Vizier sends. The focus check runs inside the pause, so it adds
     /// no time on the common path. `stillWanted` is checked after the pause, so an Escape in that
     /// window stops the paste (the text is already on the clipboard).
-    static func paste(_ text: String, appAtStop: pid_t?, stillWanted: () -> Bool) async -> Outcome {
-        guard setClipboard(text) else { return .failed(clipboardWriteFailed) }
+    static func paste(_ text: String, appAtStop: pid_t?, using dependencies: Dependencies = .system,
+                      stillWanted: () -> Bool) async -> Outcome {
+        let pasteboard = dependencies.pasteboard
+        guard let written = setClipboard(text, on: pasteboard) else { return .failed(clipboardWriteFailed) }
+        func clipboardIsOurs() -> Bool { pasteboard.changeCount == written }
+        let changed = Outcome.held(PasteDecision.clipboardChanged)
         let clock = ContinuousClock()
         let checkStarted = clock.now
-        let decision = checkTarget(started: checkStarted, appAtStop: appAtStop)
+        let decision = dependencies.checkTarget(checkStarted, appAtStop)
         let remaining = prePasteDelay - (clock.now - checkStarted)
         if remaining > .zero { try? await Task.sleep(for: remaining) }
         guard stillWanted() else { return .withdrawn }
-        guard AXIsProcessTrusted() else { return .failed(accessibilityMissing) }
+        guard clipboardIsOurs() else { return changed }
+        guard dependencies.hasAccessibility() else { return .failed(accessibilityMissing) }
         if case .hold(let reason) = decision { return .held(reason) }
         // The user can switch apps, or move into a password field, during the pause too, so look
         // once more right before the keystroke.
-        if case .hold(let reason) = finalCheck(appAtStop: appAtStop) {
+        let final = dependencies.finalCheck(appAtStop)
+        guard clipboardIsOurs() else { return changed }
+        if case .hold(let reason) = final {
             log.notice("paste held: \(Outcome.held(reason).logCode, privacy: .public), seen just before the keystroke")
             return .held(reason)
         }
-        if keyCodeNineIsCommandV() {
-            return await postCommandV() ? .keystroke : .failed("could not create the Cmd+V events")
+        switch dependencies.prepareShortcut() {
+        case .commandV(let post): return await postCommandV(post, clipboardIsOurs: clipboardIsOurs)
+        case .appleScript: return pasteWithAppleScript(clipboardIsOurs: clipboardIsOurs)
+        case .unavailable: return .failed("could not create the Cmd+V events")
         }
-        return pasteWithAppleScript()
     }
 
     /// The pid, focused-element subrole, and secure event input, read again just before the
@@ -167,14 +197,14 @@ enum Paster {
         return decision
     }
 
-    private static func setClipboard(_ text: String) -> Bool {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        guard pasteboard.setString(text, forType: .string) else { return false }
+    private static func setClipboard(_ text: String, on pasteboard: NSPasteboard) -> Int? {
+        let written = pasteboard.clearContents()
+        guard pasteboard.setString(text, forType: .string) else { return nil }
         if let bundleIdentifier = Bundle.main.bundleIdentifier {
             pasteboard.setString(bundleIdentifier, forType: sourceType)
         }
-        return pasteboard.string(forType: .string) == text
+        guard pasteboard.string(forType: .string) == text, pasteboard.changeCount == written else { return nil }
+        return written
     }
 
     /// True when key code 9 with Command types "v" in the current layout: QWERTY, and the
@@ -198,31 +228,51 @@ enum Paster {
         return String(utf16CodeUnits: characters, count: length).lowercased() == "v"
     }
 
-    private static func postCommandV() async -> Bool {
+    private static func prepareShortcut() -> Shortcut {
+        guard keyCodeNineIsCommandV() else { return .appleScript }
         let source = CGEventSource(stateID: .privateState)
         guard let commandDown = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: true),
               let vDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
               let vUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false),
               let commandUp = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: false)
-        else { return false }
+        else { return .unavailable }
         commandDown.flags = .maskCommand
         vDown.flags = .maskCommand
         vUp.flags = .maskCommand
         for event in [commandDown, vDown, vUp, commandUp] {
             event.setIntegerValueField(.eventSourceUserData, value: eventTag)
         }
-        for (index, event) in [commandDown, vDown, vUp, commandUp].enumerated() {
-            if index > 0 { try? await Task.sleep(for: keyEventGap) }
+        return .commandV { key in
+            let event = switch key {
+            case .commandDown: commandDown
+            case .vDown: vDown
+            case .vUp: vUp
+            case .commandUp: commandUp
+            }
             event.post(tap: .cghidEventTap)
         }
-        return true
+    }
+
+    private static func postCommandV(_ post: (CommandVEvent) -> Void, clipboardIsOurs: () -> Bool) async -> Outcome {
+        guard clipboardIsOurs() else { return .held(PasteDecision.clipboardChanged) }
+        post(.commandDown)
+        defer { post(.commandUp) }
+        try? await Task.sleep(for: keyEventGap)
+        guard clipboardIsOurs() else { return .held(PasteDecision.clipboardChanged) }
+        post(.vDown)
+        try? await Task.sleep(for: keyEventGap)
+        post(.vUp)
+        try? await Task.sleep(for: keyEventGap)
+        return .keystroke
     }
 
     /// System Events resolves "v" through the current layout, which key code 9 does not.
-    private static func pasteWithAppleScript() -> Outcome {
+    private static func pasteWithAppleScript(clipboardIsOurs: () -> Bool) -> Outcome {
+        guard let script = NSAppleScript(source: #"tell application "System Events" to keystroke "v" using command down"#)
+        else { return .failed("could not create the AppleScript paste") }
+        guard clipboardIsOurs() else { return .held(PasteDecision.clipboardChanged) }
         var error: NSDictionary?
-        NSAppleScript(source: #"tell application "System Events" to keystroke "v" using command down"#)?
-            .executeAndReturnError(&error)
+        script.executeAndReturnError(&error)
         if let error {
             // The error text can quote other apps' state; it goes to the private log only.
             let number = error[NSAppleScript.errorNumber] as? Int

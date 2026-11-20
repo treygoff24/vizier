@@ -68,7 +68,7 @@ struct BoardText {
 }
 
 /// A flap's faces: top, bottom, the 1px split at the midline, and the ink on it.
-struct FlapTone {
+struct FlapTone: Equatable {
     let top: NSColor
     let bottom: NSColor
     let split: NSColor

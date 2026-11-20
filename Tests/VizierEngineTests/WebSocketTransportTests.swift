@@ -103,7 +103,7 @@ import Testing
         let result = await finish(transcriber)
         guard case .failure(.streamLost(let reason)) = result else { Issue.record("expected stream loss: \(result)"); return }
         #expect(reason.contains("closed 1008"))
-        #expect(reason.contains("synthetic policy reason"))
+        #expect(!reason.contains("synthetic policy reason"))
         #expect(events.all == [.streamLost(reason)])
     }
 
@@ -220,6 +220,23 @@ import Testing
         server.stop()
         #expect(server.snapshot.error == nil)
         #expect(server.snapshots.allSatisfy { $0.error == nil })
+    }
+
+    @Test func eachConnectionSendsTheKeytermLibraryOnItsFirstMessageOnly() async throws {
+        let server = try WebSocketTestServer(provider: .scribe, behaviors: [.scribeRepairLive, .happy])
+        defer { checkServer(server) }
+        let setup = ScribeRealtime.Setup(model: ScribeRealtime.libraryModel, languages: [], vocabulary: (1...51).map { "Term\($0)" }, noVerbatim: false)
+        let transcriber = ScribeRealtimeTranscriber(setup: setup, apiKey: "synthetic-test-key", finalTimeoutMs: 3_000, endpoint: server.endpoint)
+        defer { transcriber.cancel() }
+        try await start(transcriber, server)
+        try #require(await waitUntil { server.snapshots[1].frames.count > 1 })
+        for snapshot in server.snapshots {
+            let libraries = snapshot.frames.filter { $0.opcode == 1 || $0.opcode == 2 }.map { frame in
+                ((try? JSONSerialization.jsonObject(with: frame.data)) as? [String: Any])?["keyterm_library"] as? [String]
+            }
+            #expect(libraries.first.flatMap { $0 } == ["Term51"])
+            #expect(libraries.dropFirst().allSatisfy { $0 == nil })
+        }
     }
 
     @Test(arguments: [false, true])

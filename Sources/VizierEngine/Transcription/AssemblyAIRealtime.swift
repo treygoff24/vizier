@@ -54,7 +54,7 @@ public enum AssemblyAIRealtime {
         /// One turn so far: its order, its text, and whether the turn has ended.
         case turn(order: Int, text: String, ended: Bool)
         case termination
-        case failed(String)
+        case failed
         case ignored
     }
 
@@ -64,9 +64,9 @@ public enum AssemblyAIRealtime {
         case "Begin": return .begin
         case "Turn": return .turn(order: message.turn_order ?? 0, text: message.transcript ?? "", ended: message.end_of_turn ?? false)
         case "Termination": return .termination
-        case "Error": return .failed(message.error ?? "error")
+        case "Error": return .failed
         default:
-            if let error = message.error { return .failed(error) }
+            if message.error != nil { return .failed }
             return .ignored
         }
     }
@@ -157,9 +157,9 @@ public struct AssemblyAIRealtimeSession: Sendable {
         case .termination:
             phase = .done
             return [.done(allText())]
-        case .failed(let reason):
+        case .failed:
             phase = .done
-            return [.failed(reason)]
+            return [.failed("server error")]
         default:
             return []
         }

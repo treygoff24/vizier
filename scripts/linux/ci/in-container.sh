@@ -39,26 +39,27 @@ bounded() {
     fi
     return "$status"
 }
-args=(swift test --skip-build --parallel --num-workers 8)
+args=(swift test --skip-build --parallel --num-workers 8 --xunit-output /home/vizier/tests.xml)
 if [[ -n "${VIZIER_CI_FILTER:-}" ]]; then
     args+=(--filter "$VIZIER_CI_FILTER")
 fi
-bounded "${args[@]}" 2>&1 | tee /home/vizier/tests.log
+bounded "${args[@]}"
 scripts/linux/portal-mock/run.sh timeout --kill-after=30 "$limit" swift test --skip-build --parallel --num-workers 8 \
-    --filter Portal 2>&1 | tee /home/vizier/portal-tests.log
+    --filter Portal --xunit-output /home/vizier/portal-tests.xml
 
-# Report each Swift Testing count, and reject an accidental empty selection.
+# SwiftPM writes a separate xUnit report for Swift Testing. Count its test cases
+# rather than parsing parallel console output, which can interleave skip lines.
 python3 - <<'PY'
-import pathlib
-import re
+from pathlib import Path
+from xml.etree import ElementTree
 
 print("\nLinux CI test counts:")
-for label, name in (("Tests", "tests.log"), ("Portal mock", "portal-tests.log")):
-    text = (pathlib.Path("/home/vizier") / name).read_text()
-    matches = re.findall(r"Test run with (\d+) tests?\b[^\n]* passed[^\n]*", text)
-    reported = sum(map(int, matches))
-    skipped = len(re.findall(r"^.*\bTest (?!run with )[^\n]* skipped\.", text, re.MULTILINE))
-    if reported <= skipped:
+for label, name in (("Tests", "tests"), ("Portal mock", "portal-tests")):
+    report = Path("/home/vizier") / f"{name}-swift-testing.xml"
+    cases = ElementTree.parse(report).findall(".//testcase")
+    skipped = sum(case.find("skipped") is not None for case in cases)
+    passed = len(cases) - skipped
+    if not passed:
         raise SystemExit(f"{label}: missing nonzero passing Swift Testing count")
-    print(f"{label}: {reported - skipped} passed, {skipped} skipped ({reported} reported)")
+    print(f"{label}: {passed} passed, {skipped} skipped ({len(cases)} reported)")
 PY

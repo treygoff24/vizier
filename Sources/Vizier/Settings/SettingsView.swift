@@ -1,3 +1,4 @@
+import AppKit
 import VizierEngine
 import SwiftUI
 
@@ -167,12 +168,18 @@ private struct AccountsPane: View {
 
 private struct WordsPane: View {
     var model: SettingsModel
+    @State private var check: WordsFiles.VocabularyCheck?
 
     var body: some View {
-        VStack(spacing: 0) {
-            SettingRow("Vocabulary", hint: "Names and terms the cloud modes should listen for, one per line. Apple’s on-device recognizer does not use them; Replacements work in every mode.") {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingRow("Vocabulary", hint: "Names and terms the cloud modes should listen for, one per line. Apple’s on-device recognizer does not use them; Replacements work in every mode.", divider: false) {
                 FlapButton(title: "Open vocabulary.txt", icon: .open, height: 30) { model.words.openVocabulary() }
             }
+            vocabularyCheck
+                .font(Face.small)
+                .foregroundStyle(Ink.ink2)
+                .padding(.leading, SettingRowMetrics.labelWidth + 14)
+            Ink.rowRule.frame(height: 1)
             SettingRow("Replacements", hint: "Fixes applied to every take, one rule per line, such as “gonna -> going to”. Whole words, any case.", divider: false) {
                 FlapButton(title: "Open replacements.txt", icon: .open, height: 30) { model.words.openReplacements() }
             }
@@ -181,6 +188,32 @@ private struct WordsPane: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, SettingRowMetrics.labelWidth + 14)
                 .padding(.bottom, 4)
+        }
+        .onAppear { check = model.words.checkVocabulary() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            check = model.words.checkVocabulary()
+        }
+    }
+
+    @ViewBuilder private var vocabularyCheck: some View {
+        switch check {
+        case .invalidConfig:
+            Text("Vizier couldn’t check these terms. Fix the config files and try again.").padding(.bottom, 12)
+        case .checked(let mode, let engine, let omitted) where omitted.isEmpty:
+            Text("All terms fit the primary recognizer in \(mode) (\(engine)).").padding(.bottom, 12)
+        case .checked(let mode, let engine, let omitted):
+            DisclosureGroup("\(omitted.count) of your terms won’t go to \(engine) in \(mode)") {
+                ScrollView {
+                    Text(verbatim: omitted.joined(separator: "\n"))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 140)
+                .padding(.top, 6)
+            }
+            .padding(.bottom, 12)
+        case .empty, nil:
+            EmptyView()
         }
     }
 }

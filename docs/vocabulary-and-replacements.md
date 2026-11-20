@@ -29,7 +29,8 @@ How each engine uses the list:
 | Engine | What it gets |
 |---|---|
 | Gemini (live and batch) | All terms |
-| ElevenLabs Scribe realtime | The first 50 terms of 20 characters or fewer |
+| ElevenLabs Scribe v3 Live (starter Scribe mode) | The first 50 terms of 20 characters or fewer as key terms. Remaining terms of 50 characters or fewer go in a keyterm library, which the model consults only when it hears a likely match |
+| ElevenLabs Scribe v2 Realtime | The first 50 terms of 20 characters or fewer as key terms |
 | ElevenLabs Scribe batch | The first 100 terms shorter than 49 characters and of five words or fewer |
 | Soniox realtime | Terms in order, as context, until they reach 8,000 characters in total |
 | AssemblyAI realtime | The first 100 terms of 50 characters or fewer, as key terms |
@@ -37,6 +38,8 @@ How each engine uses the list:
 | Local whisper | Nothing |
 
 Put the terms you care about most first. Terms sent to a cloud provider leave your Mac; see [privacy](privacy.md).
+
+On a Mac, Settings › Words shows how many terms the active mode’s primary recognizer leaves out. Expand that line to see which terms. The list is shown only in Settings and does not cover engines used as fallbacks.
 
 ## replacements.txt
 

@@ -12,7 +12,7 @@ The daemon does the work. Every other command (`vizier toggle`, `vizier status`,
 
 - libwayland-client is required by the Linux executable on every desktop, including headless operation and AppImage hosts.
 - A microphone, and PipeWire or PulseAudio. Vizier records with `pw-record`, or `parec` if that is all you have. On Debian and Ubuntu: `sudo apt install pipewire-bin`.
-- For the live cloud modes (Scribe, Gemini live), libcurl 8.11 or later. Debian 13 and Ubuntu 25.04 and later have it. On an older distro the batch engines still work and `vizier doctor` fails the `libcurl` check.
+- For the live cloud modes (Scribe, Gemini live), libcurl 8.11 or later. Debian 13 and Ubuntu 25.04 and later have it. On an older distro, batch modes still work. `vizier doctor` fails the `libcurl` check if the active mode uses live transcription, and warns if only another mode uses it.
 - One speech route:
   - **Local (the default mode, no keys).** A whisper.cpp server on this machine. See [Local mode](#local-mode).
   - **ElevenLabs or Gemini.** An API key, set with `vizier key set`. See [Cloud modes](#cloud-modes).
@@ -20,14 +20,14 @@ The daemon does the work. Every other command (`vizier toggle`, `vizier status`,
 
 ## Install
 
-The packages are for x86_64 (amd64) Linux. Download one from the [release page](https://github.com/treygoff24/vizier/releases/latest). For release 0.3.0 the files are:
+The packages are for x86_64 (amd64) Linux. Download one from the [release page](https://github.com/treygoff24/vizier/releases/latest). For release 0.4.0 the files are:
 
-- `vizier_0.3.0_amd64.deb`. Install it with `sudo apt install ./vizier_0.3.0_amd64.deb`. It installs `/usr/bin/vizier`, the sounds, the desktop entry and a systemd user unit, and pulls in the libraries it needs. The helper tools for audio, clipboard and pasting are recommended packages; see [Requirements](#requirements).
-- `Vizier-0.3.0-x86_64.AppImage`. Make it executable (`chmod +x`) and keep it somewhere permanent. It takes the same arguments as the `vizier` command (`./Vizier-0.3.0-x86_64.AppImage setup`), and setup points the service and desktop entry at that path. It uses your system's libraries (libcurl, SQLite, libsystemd, libwayland-client) instead of bundling them.
+- `vizier_0.4.0_amd64.deb`. Install it with `sudo apt install ./vizier_0.4.0_amd64.deb`. It installs `/usr/bin/vizier`, the sounds, the desktop entry and a systemd user unit, and pulls in the libraries it needs. The helper tools for audio, clipboard and pasting are recommended packages; see [Requirements](#requirements).
+- `Vizier-0.4.0-x86_64.AppImage`. Make it executable (`chmod +x`) and keep it somewhere permanent. It takes the same arguments as the `vizier` command (`./Vizier-0.4.0-x86_64.AppImage setup`), and setup points the service and desktop entry at that path. It uses your system's libraries (libcurl, SQLite, libsystemd, libwayland-client) instead of bundling them.
 
 Later releases name their files the same way with their own version.
 
-To build from source, install the Wayland development headers (`sudo apt install libwayland-dev` on Debian/Ubuntu) and Swift 6.4 with [swiftly](https://www.swift.org/install/linux/), then:
+To build from source, install the SQLite and Wayland development headers (`sudo apt install libsqlite3-dev libwayland-dev` on Debian/Ubuntu) and Swift 6.4 with [swiftly](https://www.swift.org/install/linux/), then:
 
 ```bash
 swift build -c release --product vizier
@@ -275,7 +275,7 @@ Run `vizier doctor`. It prints each check as `ok`, `warn` or `fail` with a `fix`
 | `socket` | The daemon is not answering | `vizier daemon`, or `systemctl --user status vizier.service` and `journalctl --user -u vizier.service` |
 | `config` | The settings, vocabulary or replacements file does not parse | `vizier config path`, fix the file. The last good config keeps running |
 | `history` | The history database cannot be opened. It is created when the daemon first runs | `vizier daemon` |
-| `libcurl` | The libcurl behind networking is older than 8.11 | Upgrade libcurl (`sudo apt-get update && sudo apt-get install libcurl4t64`). Batch engines still work |
+| `libcurl` | A live mode needs libcurl 8.11 or later | Install a newer libcurl from your distro, or use a batch mode (`vizier config set mode local`) |
 | `pw_record` | Neither `pw-record` nor `parec` is installed | `sudo apt install pipewire-bin` (Fedora `pipewire-utils`, Arch `pipewire`, openSUSE `pipewire-tools`) |
 | `local_whisper` | Nothing answers at `127.0.0.1:8738` | Follow [Local mode](#local-mode), or switch mode: `vizier config set mode <id>` |
 | `local_cleanup` | The cleanup server a mode names is down | Start it, or choose a mode without cleanup |

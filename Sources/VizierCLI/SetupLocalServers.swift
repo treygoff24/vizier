@@ -44,8 +44,7 @@ public enum LocalServers {
 
     /// True when something accepts a TCP connection at the URL's loopback host and port.
     public static func answers(_ url: URL, timeoutMs: Int32 = 400) -> Bool {
-        guard Loopback.allows(url) else { return false }
-        let port = UInt16(url.port ?? 80)
+        guard Loopback.allows(url), let port = UInt16(exactly: url.port ?? 80), port != 0 else { return false }
         let host = url.host()?.lowercased() ?? "127.0.0.1"
         let ipv6 = host.contains(":")
         let fd = socket(ipv6 ? AF_INET6 : AF_INET, Int32(SOCK_STREAM.rawValue) | Int32(SOCK_NONBLOCK.rawValue) | Int32(SOCK_CLOEXEC.rawValue), 0)

@@ -123,7 +123,7 @@ public final class SonioxRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
                 sending = false
                 guard self.socket === socket, outcome == nil else { return }
                 if let error {
-                    lost(Self.describe(error, on: socket))
+                    lost(ProviderFailure.describe(error, on: socket))
                 } else {
                     pump()
                 }
@@ -139,7 +139,7 @@ public final class SonioxRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
                 guard self.socket === socket, outcome == nil else { return }
                 switch result {
                 case .failure(let error):
-                    lost(Self.describe(error, on: socket))
+                    lost(ProviderFailure.describe(error, on: socket))
                 case .success(let message):
                     handle(message)
                     receive()
@@ -162,7 +162,7 @@ public final class SonioxRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
         do {
             apply(session.receive(try SonioxRealtime.decode(frame)))
         } catch {
-            log.error("unreadable server frame of \(frame.count, privacy: .public) bytes: \(String(describing: error), privacy: .private)")
+            log.error("unreadable server frame of \(frame.count, privacy: .public) bytes")
         }
     }
 
@@ -181,21 +181,5 @@ public final class SonioxRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
         onEvent = nil
         waiter?.resume(with: result.mapError { $0 as Error })
         waiter = nil
-    }
-
-    /// The server puts its reason in the close frame (after an error response, which the session
-    /// has usually reported already), and a refused upgrade shows up only as the HTTP status.
-    private static func describe(_ error: Error, on socket: URLSessionWebSocketTask) -> String {
-        var parts: [String] = []
-        if socket.closeCode != .invalid {
-            parts.append("closed \(socket.closeCode.rawValue)")
-            if let reason = socket.closeReason, let text = String(data: reason, encoding: .utf8), !text.isEmpty {
-                parts.append(text)
-            }
-        } else if let http = socket.response as? HTTPURLResponse, http.statusCode != 101 {
-            parts.append("HTTP \(http.statusCode)")
-        }
-        parts.append((error as NSError).localizedDescription)
-        return parts.joined(separator: ": ")
     }
 }

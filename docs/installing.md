@@ -48,7 +48,7 @@ Grant them in System Settings › Privacy & Security.
 
 Release builds update themselves through [Sparkle](https://sparkle-project.org). Check for updates is in the menu bar popover and in Settings › About. Vizier checks the feed at `https://github.com/treygoff24/vizier/releases/latest/download/appcast.xml`.
 
-The updater runs only in a copy whose code signature is valid and carries a team identifier, as the released DMG does. A copy you build yourself is signed ad hoc, has no team identifier, never updates itself, and shows Check for updates greyed out with the note "Updates come with the signed release." To see whether your copy can update, run:
+The updater runs only in a copy with a valid Developer ID Application signature, as the released DMG has. An ad hoc or Apple Development signature does not qualify. Those builds show Check for updates greyed out with the note "Updates come with the signed release." To see whether your copy can update, run:
 
 ```bash
 /Applications/Vizier.app/Contents/MacOS/Vizier --version

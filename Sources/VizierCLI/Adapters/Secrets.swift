@@ -14,7 +14,7 @@ public enum SecretError: Error, CustomStringConvertible, Equatable {
     /// The key file is readable by others, or not ours.
     case unsafeFile(String)
     case unknownAccount(String)
-    /// The Secret Service backend cannot store (no `secret-tool`).
+    /// No Secret Service backend is available in this session.
     case unavailable(String)
 
     public var description: String {
@@ -197,13 +197,22 @@ public struct SecretToolStore: SecretStore {
         catch { throw SecretError.backend("secret-tool could not be run") }
     }
 
-    public func read(_ account: String) throws -> String? {
-        guard isInstalled else { return nil }
+    func search(_ account: String) throws -> SecretServiceSearch {
         let locator = locator
-        let found: SecretServiceSearch
-        do { found = try Blocking.run { try await locator.search(account: account) } }
+        do { return try Blocking.run { try await locator.search(account: account) } }
+        catch DBusFailure.method(_, let name) where name == "org.freedesktop.DBus.Error.ServiceUnknown" || name == "org.freedesktop.DBus.Error.NameHasNoOwner" {
+            throw SecretError.unavailable("No Secret Service is running on the session bus")
+        }
+        catch DBusFailure.operation(let code) where code == -ENOMEDIUM || code == -ENOENT {
+            throw SecretError.unavailable("There is no session bus for Secret Service")
+        }
         catch let error as SecretError { throw error }
         catch { throw SecretError.backend("Secret Service could not be asked (is a keyring running on the session bus?)") }
+    }
+
+    public func read(_ account: String) throws -> String? {
+        guard isInstalled else { return nil }
+        let found = try search(account)
         guard found.unlocked > 0 else {
             if found.locked > 0 { throw SecretError.backend("Secret Service has the key but its keyring is locked; unlock it (or the key cannot be read)") }
             return nil
@@ -408,13 +417,23 @@ public struct LinuxSecretStore: SecretStore {
         _ = try storeReporting(value, account: account)
     }
 
-    /// Stores to Secret Service when it takes the key, else to the file; says which.
+    /// A file write can replace a key only when Secret Service does not already hold it.
     @discardableResult
     public func storeReporting(_ value: String, account: String) throws -> SecretBackend {
         guard SecretAccount(rawValue: account) != nil else { throw SecretError.unknownAccount(account) }
         if secretServiceAvailable {
             do { try secretService.store(value, account: account); return .secretService }
-            catch {}  // locked or no service on the bus: the file is the fallback
+            catch let storeError {
+                let items: SecretServiceSearch?
+                do { items = try secretService.search(account) }
+                catch SecretError.unavailable { items = nil }
+                if let items {
+                    if items.locked > 0 {
+                        throw SecretError.backend("Secret Service has the key but its keyring is locked; unlock it and try again")
+                    }
+                    if items.unlocked > 0 { throw storeError }
+                }
+            }
         }
         try file.store(value, account: account)
         return .file

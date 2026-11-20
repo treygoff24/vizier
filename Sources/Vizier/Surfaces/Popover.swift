@@ -53,7 +53,7 @@ final class PopoverModel {
             activeModeID = snapshot.settings.mode
             modeNote = nil
         } catch {
-            // A broken file keeps the last good config running; the menu shows it read-only.
+            // Broken settings keep the last good mode running; the menu shows it read-only.
             let load = config.load()
             snapshot = nil
             modes = load.config.settings.modes
@@ -112,7 +112,9 @@ final class PopoverModel {
         let time = HistoryBoard.clock(last.startedAt)
         switch last.outcome {
         case .failed: return "Nothing came back at \(time). Audio saved."
-        case .held: return "Held at \(time). The text went to the clipboard."
+        case .held:
+            return last.pasteMethod == "clipboard" ? "Held at \(time). The text went to the clipboard."
+                                                  : "Held at \(time). The text is saved in History."
         default:
             let after = last.pasteMs.map { ", \(HistoryBoard.seconds($0)) after stop" } ?? ""
             return "Answered at \(time)\(after)."
@@ -300,9 +302,8 @@ struct PopoverView: View {
 
     private func alertBanner(_ take: TakeRecord) -> some View {
         HStack(alignment: .center, spacing: 10) {
-            StatusPlate(take.outcome, small: true)
-            Text(take.outcome == .held ? "The \(HistoryBoard.clock(take.startedAt)) take had nowhere to paste."
-                                       : "The \(HistoryBoard.clock(take.startedAt)) take did not paste.")
+            StatusPlate(take, small: true)
+            Text("The \(HistoryBoard.clock(take.startedAt)) take did not paste.")
                 .font(Face.remarks).foregroundStyle(Ink.ink2).lineLimit(2)
             Spacer(minLength: 4)
             if let text = take.bestText {
@@ -470,7 +471,7 @@ private struct RecentRow: View {
                     Text((take.destination ?? "—").uppercased()).font(Face.row).lineLimit(1).frame(width: 70, alignment: .leading)
                     Text(code).font(Face.row).frame(width: 32, alignment: .leading)
                     Text(take.words.map { $0.formatted() } ?? "—").font(Face.row).frame(width: 44, alignment: .leading)
-                    StatusPlate(take.outcome, small: true)
+                    StatusPlate(take, small: true)
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())

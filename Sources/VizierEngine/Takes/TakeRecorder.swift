@@ -7,6 +7,8 @@ public final class TakeRecorder: @unchecked Sendable {
     public struct Summary: Sendable {
         public var frames: Int64
         public var capture: CaptureStats
+        /// The source ended on its own, even if the user stopped before its event reached the UI.
+        public var captureFailed: Bool
         /// Set when a write to the recording file, or closing it, failed. Earlier audio is still on disk.
         public var writeError: String?
         public var seconds: Double { Double(frames) / 16_000 }
@@ -23,6 +25,7 @@ public final class TakeRecorder: @unchecked Sendable {
     private var pending = Data()
     private var onChunk: (@Sendable (Data) -> Void)?
     private var writeError: String?
+    private var captureFailed = false
 
     private let recordingFactory: @Sendable (TakeFiles) throws -> any RecordingFile
 
@@ -61,10 +64,14 @@ public final class TakeRecorder: @unchecked Sendable {
         pending = Data()
         pending.reserveCapacity(Self.chunkBytes * 2)
         writeError = nil
+        captureFailed = false
         framesCaptured.store(0, ordering: .relaxed)
         self.onChunk = onChunk
         do {
-            try capture.start(sink: { [unowned self] samples in self.receive(samples) }, onEvent: onEvent)
+            try capture.start(sink: { [unowned self] samples in self.receive(samples) }, onEvent: { [unowned self] event in
+                if case .failed = event { self.captureFailed = true }
+                onEvent(event)
+            })
         } catch {
             try? file?.close()
             file = nil
@@ -83,7 +90,8 @@ public final class TakeRecorder: @unchecked Sendable {
         }
         file = nil
         onChunk = nil
-        return Summary(frames: framesCaptured.load(ordering: .relaxed), capture: stats, writeError: writeError)
+        return Summary(frames: framesCaptured.load(ordering: .relaxed), capture: stats,
+                       captureFailed: captureFailed, writeError: writeError)
     }
 
     private func receive(_ samples: UnsafeBufferPointer<Int16>) {

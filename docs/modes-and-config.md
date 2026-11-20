@@ -17,7 +17,7 @@ Vizier writes starter versions of all three if they are missing. They are re-rea
 | Mode | Engine | Cloud | Cleanup | Fillers removed by |
 |---|---|---|---|---|
 | Apple (default) | Apple speech recognizer, live | No | None | Filler rule |
-| Scribe | ElevenLabs Scribe, live | ElevenLabs, with Gemini batch as the first fallback | None | Filler rule |
+| Scribe | ElevenLabs Scribe v3 Live | ElevenLabs, with Gemini batch as the first fallback | None | Filler rule |
 | Gemini Clean | Gemini Live | Google | Gemini model pass | The cleanup pass |
 | Gemini SMART | Gemini Live in SMART mode | Google | None | Gemini |
 
@@ -102,7 +102,7 @@ Each has `engine`, `model` and `mode`, and `url` for local engines. `offline_fal
 | Where | Engine | Notes |
 |---|---|---|
 | Live transcriber | `apple-speech` | On-device, no key |
-| | `elevenlabs-scribe-realtime` | Needs an ElevenLabs key |
+| | `elevenlabs-scribe-realtime` | Needs an ElevenLabs key. New configs use `scribe_v3_live`; existing configs naming `scribe_v2_realtime` still work. |
 | | `gemini-live` | Needs a Gemini key |
 | | `soniox-realtime` | Needs a Soniox key; model `stt-rt-v5`. Mac only for now, see [Soniox and AssemblyAI](#soniox-and-assemblyai) |
 | | `assemblyai-realtime` | Needs an AssemblyAI key; model `universal-3-6-pro`. Mac only for now, see the same section |

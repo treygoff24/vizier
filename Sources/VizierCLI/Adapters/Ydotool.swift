@@ -102,7 +102,7 @@ public struct YdotoolKeySender: KeySender {
         }
     }
 
-    public func send(_ chord: PasteChord) async throws {
+    public func send(_ chord: PasteChord, stillWanted: @escaping @MainActor @Sendable () -> Bool) async throws {
         let c = Self.keyLeftCtrl, s = Self.keyLeftShift, v = Self.keyV
         let events: [String]
         switch chord {
@@ -114,6 +114,6 @@ public struct YdotoolKeySender: KeySender {
             throw AdapterError("ydotoold socket is unavailable; paste the clipboard manually")
         }
         variables["YDOTOOL_SOCKET"] = socket.path
-        try await Helper.send(["ydotool", "key"] + events, environment: variables)
+        try await Helper.send(["ydotool", "key"] + events, environment: variables, stillWanted: stillWanted)
     }
 }

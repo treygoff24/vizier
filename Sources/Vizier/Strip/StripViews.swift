@@ -2,8 +2,8 @@ import AppKit
 import VizierEngine
 
 /// Everything the strip shows, set by `StripController`.
-struct StripState {
-    struct Status {
+struct StripState: Equatable {
+    struct Status: Equatable {
         var text: String
         var tone: FlapTone
         var sub: String
@@ -87,7 +87,7 @@ final class StripBoardView: NSView {
 
 /// The strip's contents except the lamp: destination, timer, platform, words, and status.
 final class StripView: NSView {
-    var state = StripState() { didSet { needsDisplay = true } }
+    var state = StripState() { didSet { if state != oldValue { needsDisplay = true } } }
 
     override var isFlipped: Bool { true }
 
@@ -208,15 +208,77 @@ final class StripView: NSView {
 /// The lamp: dark glass in a bezel, lit amber from the real buffer level while samples flow.
 final class LampView: NSView {
     /// The lamp's level, 0...1, or nil when the mic is not live.
-    var level: Double? { didSet { if level != oldValue { needsDisplay = true } } }
+    var level: Double? { didSet { if Self.step(level) != Self.step(oldValue) { needsDisplay = true } } }
     /// The strip's board in this view's coordinates. The glow lights the board and stops at its edge.
-    var board: CGRect = .null { didSet { needsDisplay = true } }
+    var board: CGRect = .null { didSet { if board != oldValue { needsDisplay = true } } }
+
+    private struct Geometry: Equatable {
+        var bounds: CGRect
+        var board: CGRect
+        var scale: CGFloat
+    }
+    private var geometry: Geometry?
+    private var artwork: [Int: CGImage] = [:]
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
 
     static let margin: CGFloat = 40
     override var isFlipped: Bool { true }
+    override var wantsUpdateLayer: Bool { true }
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
+    override func setFrameSize(_ newSize: NSSize) {
+        let changed = frame.size != newSize
+        super.setFrameSize(newSize)
+        if changed { needsDisplay = true }
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        needsDisplay = true
+    }
+
+    /// Keep the meter's continuous smoothing, but show only 64 distinguishable brightness levels.
+    /// The separate off image has no amber, including at the quietest live level.
+    private static func step(_ level: Double?) -> Int {
+        guard let level else { return -1 }
+        return Int((min(max(level.isFinite ? level : 0, 0), 1) * 63).rounded())
+    }
+
+    override func updateLayer() {
+        guard let layer, bounds.width > 0, bounds.height > 0 else { return }
+        let scale = window?.backingScaleFactor ?? layer.contentsScale
+        let geometry = Geometry(bounds: bounds, board: board, scale: scale)
+        if self.geometry != geometry {
+            artwork.removeAll(keepingCapacity: true)
+            self.geometry = geometry
+        }
+        let step = Self.step(level)
+        if artwork[step] == nil {
+            let space = CGColorSpace(name: CGColorSpace.sRGB)!
+            guard let context = CGContext(data: nil, width: Int(ceil(bounds.width * scale)),
+                height: Int(ceil(bounds.height * scale)), bitsPerComponent: 8, bytesPerRow: 0,
+                space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            context.scaleBy(x: scale, y: scale)
+            context.translateBy(x: -bounds.minX, y: bounds.maxY)
+            context.scaleBy(x: 1, y: -1)
+            paint(context, level: step < 0 ? nil : Double(step) / 63, scale: scale)
+            artwork[step] = context.makeImage()
+        }
+        // Swapping cached contents must not start an implicit, display-rate animation.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.contentsScale = scale
+        layer.contents = artwork[step]
+        CATransaction.commit()
+    }
+
+    private func paint(_ context: CGContext, level: Double?, scale: CGFloat) {
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         let lamp = CGRect(x: center.x - 10, y: center.y - 10, width: 20, height: 20)
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
@@ -239,7 +301,8 @@ final class LampView: NSView {
                 context.addPath(CGPath(roundedRect: board, cornerWidth: StripMetrics.radius, cornerHeight: StripMetrics.radius, transform: nil))
                 context.clip()
             }
-            context.setShadow(offset: .zero, blur: 4 + 26 * lv, color: Board.color(0xffb000).cgColor)
+            // A bitmap context's shadow blur is in pixels; AppKit's drawing context scaled it for us.
+            context.setShadow(offset: .zero, blur: (4 + 26 * lv) * scale, color: Board.color(0xffb000).cgColor)
             context.setFillColor(Board.color(0xffb000, alpha: 0.3 + 0.55 * lv).cgColor)
             context.fillEllipse(in: lamp.insetBy(dx: -3 * lv, dy: -3 * lv))
             context.restoreGState()

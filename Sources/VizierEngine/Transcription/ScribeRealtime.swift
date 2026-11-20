@@ -1,14 +1,21 @@
 import Foundation
 
-/// The wire format of ElevenLabs Scribe v2 Realtime, checked against the realtime API reference and
-/// live probes. Settings travel in the URL; the socket carries JSON text frames with
-/// base64 audio one way and transcript events the other.
+/// The wire format of ElevenLabs Scribe v3 Live and v2 Realtime. Both use the same WebSocket,
+/// with settings in the URL and JSON frames for audio and transcripts. v3 Live is the default
+/// and can also receive a keyterm library on the first audio frame.
 public enum ScribeRealtime {
     public static let endpoint = URL(string: "wss://api.elevenlabs.io/v1/speech-to-text/realtime")!
 
     /// The realtime model takes at most 50 keyterms of at most 20 characters each.
     public static let maxKeyterms = 50
     public static let maxKeytermLength = 20
+
+    /// Scribe v3 Live also takes a keyterm library, which it consults only when it hears a likely
+    /// match: up to 10,000 terms of at most 50 characters. Other models close the socket on one.
+    public static let libraryModel = "scribe_v3_live"
+    public static let defaultModel = libraryModel
+    public static let maxLibraryTerms = 10_000
+    public static let maxLibraryTermLength = 50
 
     public struct Setup: Equatable, Sendable {
         public var model: String
@@ -28,10 +35,20 @@ public enum ScribeRealtime {
     }
 
     /// The vocabulary terms the realtime model accepts, in order: the first 50 that fit in 20
-    /// characters. Longer terms are left out rather than truncated into something else.
+    /// Unicode scalars. Longer terms are left out rather than truncated into something else.
     public static func keyterms(_ vocabulary: [String]) -> [String] {
         Array(vocabulary.lazy.map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && $0.count <= maxKeytermLength }.prefix(maxKeyterms))
+            .filter { !$0.isEmpty && $0.unicodeScalars.count <= maxKeytermLength }.prefix(maxKeyterms))
+    }
+
+    /// The vocabulary terms that go in the keyterm library: for Scribe v3 Live, every term of at
+    /// most 50 Unicode scalars that is not already a keyterm; for other models, none. Even
+    /// 10,000 terms of 50 four-byte scalars fit in the service's 2 MB of library text.
+    public static func keytermLibrary(_ setup: Setup) -> [String] {
+        guard setup.model == libraryModel else { return [] }
+        let keyterms = Set(keyterms(setup.vocabulary))
+        return Array(setup.vocabulary.lazy.map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && $0.unicodeScalars.count <= maxLibraryTermLength && !keyterms.contains($0) }.prefix(maxLibraryTerms))
     }
 
     /// Manual commits: Vizier decides where segments end, so it knows how many finals to wait for.
@@ -76,6 +93,23 @@ public enum ScribeRealtime {
         }
     }
 
+    /// Known wire identifiers only. An unknown identifier must not carry arbitrary server text.
+    public enum Failure: String, Sendable {
+        case authentication = "auth_error"
+        case quota = "quota_exceeded"
+        case transcriber = "transcriber_error"
+        case input = "input_error"
+        case invalidRequest = "invalid_request"
+        case serverError = "error"
+        case unacceptedTerms = "unaccepted_terms"
+        case rateLimited = "rate_limited"
+        case queueOverflow = "queue_overflow"
+        case resourceExhausted = "resource_exhausted"
+        case sessionTimeLimit = "session_time_limit_exceeded"
+        case chunkSize = "chunk_size_exceeded"
+        case insufficientAudio = "insufficient_audio_activity"
+    }
+
     public enum ServerEvent: Equatable, Sendable {
         case sessionStarted
         /// The current segment so far, not a delta.
@@ -88,12 +122,13 @@ public enum ScribeRealtime {
         case commitIgnored
         /// An error event (`auth_error`, `quota_exceeded`, `invalid_request`, and the rest). The
         /// server closes the socket after most of them.
-        case failed(type: String, message: String)
+        case failed(Failure)
         /// Events this build doesn't use: entities, warnings.
         case ignored
     }
 
-    public static func encode(_ message: ClientMessage) throws -> Data {
+    /// `library` rides only on a connection's first message; the server rejects it on any later one.
+    public static func encode(_ message: ClientMessage, library: [String] = []) throws -> Data {
         let audio: Data
         let commit: Bool
         switch message {
@@ -103,7 +138,8 @@ public enum ScribeRealtime {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return try encoder.encode(Wire.Chunk(
-            message_type: "input_audio_chunk", audio_base_64: audio.base64EncodedString(), commit: commit, sample_rate: 16_000))
+            message_type: "input_audio_chunk", audio_base_64: audio.base64EncodedString(), commit: commit, sample_rate: 16_000,
+            keyterm_library: library.isEmpty ? nil : library))
     }
 
     public static func decode(_ frame: Data) throws -> ServerEvent {
@@ -120,7 +156,8 @@ public enum ScribeRealtime {
             return .timed(text: message.text ?? "", tokens: tokens)
         case "commit_throttled": return .commitIgnored
         default:
-            if let error = message.error { return .failed(type: message.message_type, message: error) }
+            if let failure = Failure(rawValue: message.message_type) { return .failed(failure) }
+            if message.error != nil { return .failed(.serverError) }
             return .ignored
         }
     }
@@ -131,6 +168,7 @@ public enum ScribeRealtime {
             var audio_base_64: String
             var commit: Bool
             var sample_rate: Int
+            var keyterm_library: [String]?
         }
 
         struct ServerMessage: Decodable {

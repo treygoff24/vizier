@@ -100,9 +100,10 @@ public enum HistoryBoard {
 }
 
 extension TakeRecord {
-    /// Where the text went, or where focus was when the take began if it never pasted.
+    /// Where the text went, or where focus was when the take began if it never pasted. Practice
+    /// never targets an app.
     public var destination: String? {
-        [destinationAtPaste, destinationAtStart].compactMap { $0 }.first { !$0.isEmpty }
+        isPractice ? nil : [destinationAtPaste, destinationAtStart].compactMap { $0 }.first { !$0.isEmpty }
     }
 
     /// The best text the take has: what was pasted, else the cleaned text, else the raw transcript.
@@ -115,6 +116,9 @@ extension TakeRecord {
         outcome == .cancelled ? nil : HistoryBoard.wordCount(bestText)
     }
 
+    /// Whether the text was delivered to the onboarding guide.
+    public var isPractice: Bool { pasteMethod == "practice" }
+
     /// Whether the take's text reached the focused app.
-    public var didPaste: Bool { outcome == .pasted || outcome == .rerouted }
+    public var didPaste: Bool { !isPractice && (outcome == .pasted || outcome == .rerouted) }
 }

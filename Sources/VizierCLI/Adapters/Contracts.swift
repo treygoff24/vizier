@@ -57,10 +57,17 @@ public protocol ClipboardWriter: Sendable {
 public protocol KeySender: Sendable {
     var name: String { get }
     func probe() async -> AdapterProbe
-    /// Throws only when no part of the chord can have reached the focused window; once a key may
-    /// have gone out it returns, so the caller never retries a paste that may have landed (A16).
-    func send(_ chord: PasteChord) async throws
+    /// Check `stillWanted` after any awaited preparation, just before dispatch. Report withdrawal
+    /// separately from a launch failure. Never retry after the paste may have reached the window.
+    func send(_ chord: PasteChord, stillWanted: @escaping @MainActor @Sendable () -> Bool) async throws
 }
+
+extension KeySender {
+    public func send(_ chord: PasteChord) async throws { try await send(chord, stillWanted: { true }) }
+}
+
+/// The take was cancelled before the paste could be delivered.
+struct PasteWithdrawn: Error {}
 
 /// The focused window as far as the desktop lets us see it.
 public struct FocusedWindow: Sendable, Equatable {

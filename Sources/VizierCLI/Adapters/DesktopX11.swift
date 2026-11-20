@@ -77,7 +77,7 @@ public struct XdotoolKeySender: KeySender {
         return AdapterProbe(name: name, available: true, detail: "xdotool on DISPLAY \(display)")
     }
 
-    public func send(_ chord: PasteChord) async throws {
-        try await Helper.send(["xdotool", "key", "--clearmodifiers", chord.rawValue], environment: env.variables)
+    public func send(_ chord: PasteChord, stillWanted: @escaping @MainActor @Sendable () -> Bool) async throws {
+        try await Helper.send(["xdotool", "key", "--clearmodifiers", chord.rawValue], environment: env.variables, stillWanted: stillWanted)
     }
 }

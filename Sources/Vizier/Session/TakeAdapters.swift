@@ -33,6 +33,10 @@ final class StripTakePresentation: TakePresentation {
     func setWords(_ plates: [WordLine.Plate]) { strip.setWords(plates) }
     func streamLost(remark: String) { strip.streamLost(remark: remark) }
     func stopped(onTime: TimeInterval) { strip.stopped(onTime: onTime) }
+    func recordingInterrupted(remark: String) {
+        raiseAlert()
+        strip.recordingInterrupted(remark: remark)
+    }
     func reroutingToBatch() { strip.reroutingToBatch() }
 
     func finish(_ result: TakeResult, remark: String?) {
@@ -79,9 +83,8 @@ final class WorkspaceFocusProbe: FocusProbe {
     }
 }
 
-/// `Paster`, with its outcome mapped to the session's neutral one. Every path of `Paster` leaves
-/// the text on the clipboard (it writes the clipboard first), except a failed clipboard write,
-/// which has always been reported with the same remark as any other failure; that stays.
+/// `Paster`, with its outcome mapped to the session's neutral one. If the clipboard write fails
+/// or another app changes the clipboard, the outcome makes no claim that the text is there.
 final class PasterService: PasteService {
     func paste(_ text: String, focusAtStop: Int32?, stillWanted: @escaping @MainActor () -> Bool) async -> PasteOutcome {
         Self.outcome(await Paster.paste(text, appAtStop: focusAtStop) { stillWanted() })
@@ -94,7 +97,7 @@ final class PasterService: PasteService {
         case .withdrawn:
             PasteOutcome(kind: .withdrawn, method: "", reason: nil, onClipboard: true, permissionMissing: false, logCode: outcome.logCode)
         case .held(let reason):
-            PasteOutcome(kind: .held, method: "", reason: reason, onClipboard: true, permissionMissing: false, logCode: outcome.logCode)
+            PasteOutcome(kind: .held, method: "", reason: reason, onClipboard: reason != PasteDecision.clipboardChanged, permissionMissing: false, logCode: outcome.logCode)
         case .failed(let reason):
             PasteOutcome(kind: .failed, method: "", reason: reason, onClipboard: reason != Paster.clipboardWriteFailed, permissionMissing: outcome.failedForAccessibility, logCode: outcome.logCode)
         }

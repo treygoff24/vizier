@@ -75,7 +75,10 @@ enum Helper {
     }
 
     /// Reports unsuccessful helpers without allowing a second injector to retry partial keys.
-    static func send(_ argv: [String], environment: [String: String], timeout: Duration = .seconds(3)) async throws {
+    @MainActor
+    static func send(_ argv: [String], environment: [String: String], timeout: Duration = .seconds(3),
+                     stillWanted: @MainActor @Sendable () -> Bool) async throws {
+        guard stillWanted() else { throw PasteWithdrawn() }
         do {
             let result = try await ProcessRunner.run(argv, environment: environment, timeout: timeout, outputLimit: 8 * 1024)
             guard result.succeeded else { throw KeyDeliveryError(description: "\(argv[0]) failed after starting; paste may have partially landed") }

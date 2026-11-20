@@ -9,6 +9,7 @@ swift build                # the engine library and the app target
 swift test                 # the unit tests (Swift Testing)
 scripts/build-app.sh       # builds build/Vizier.app, signed ad hoc by default
 scripts/test-release-checks.sh  # tests for the release script's checks (not part of swift test)
+scripts/test-install-stop.sh    # tests which process the macOS installer stops, without installing
 ```
 
 Run the tests that cover what you changed while you work, and the full suite before you open a pull request.

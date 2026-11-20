@@ -21,7 +21,7 @@ import Testing
         let turn = #"{"type":"Turn","turn_order":2,"end_of_turn":true,"transcript":"Zorblex quaxil.","words":[]}"#
         #expect(try AssemblyAIRealtime.decode(Data(turn.utf8)) == .turn(order: 2, text: "Zorblex quaxil.", ended: true))
         #expect(try AssemblyAIRealtime.decode(Data(#"{"type":"Termination","audio_duration_seconds":3}"#.utf8)) == .termination)
-        #expect(try AssemblyAIRealtime.decode(Data(#"{"error":"Invalid API key"}"#.utf8)) == .failed("Invalid API key"))
+        #expect(try AssemblyAIRealtime.decode(Data(#"{"error":"Invalid API key"}"#.utf8)) == .failed)
     }
 
     @Test func audioWaitsForBeginAndTheForcedTurnEndsTheTake() {

@@ -155,8 +155,8 @@ public struct ScribeRealtimeSession: Sendable {
     public mutating func receive(_ event: ScribeRealtime.ServerEvent) -> [Output] {
         guard phase != .done else { return [] }
         switch (phase, event) {
-        case (_, .failed(let type, let message)):
-            return liveEnded("\(type): \(message)")
+        case (_, .failed(let failure)):
+            return liveEnded(failure.rawValue)
         case (.awaitingSession, .sessionStarted):
             phase = .streaming
             var out: [Output] = []

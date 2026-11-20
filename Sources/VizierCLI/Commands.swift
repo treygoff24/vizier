@@ -166,17 +166,17 @@ public enum Doctor {
                 add("socket", "fail", "Runtime directory unavailable.", error.next)
             }
         } catch { add("runtime_dir", "fail", "Runtime unavailable.", "vizier doctor") }
+        let loadedConfig = config.load()
         do {
             _ = try config.settingsSnapshot()
-            guard config.load().errors.isEmpty else { throw CLIError("storage_error", "Config validation failed.", next: "vizier config path") }
+            guard loadedConfig.errors.isEmpty else { throw CLIError("storage_error", "Config validation failed.", next: "vizier config path") }
             add("config", "ok", "Settings, vocabulary and replacements parse successfully.", "vizier config get")
         }
         catch { add("config", "fail", "Config missing or invalid: \(config.directory.path)", "vizier config path") }
         do { _ = try HistoryStore(readingOnly: historyURL, takesRoot: takesRoot); add("history", "ok", "History opens read-only.", "vizier history --limit 1") }
         catch { add("history", "fail", "History database unavailable: \(historyURL.path)", "vizier daemon") }
-        if let version = loadedCurlVersion() {
-            add("libcurl", version.number >= 0x080b00 ? "ok" : "fail", "FoundationNetworking loaded libcurl \(version.text); live engines require 8.11+. Batch engines remain available.", "sudo apt-get update && sudo apt-get install libcurl4t64")
-        } else { add("libcurl", "fail", "Cannot inspect FoundationNetworking's loaded libcurl.", "vizier doctor") }
+        let curl = curlCheck(loadedConfig.config)
+        add("libcurl", curl.status, curl.detail, curl.fix)
         func onPath(_ name: String) -> Bool {
             (environment["PATH"] ?? "").split(separator: ":", omittingEmptySubsequences: false).contains {
                 let directory = $0.isEmpty ? "." : String($0)
@@ -192,10 +192,34 @@ public enum Doctor {
         if onPath("pw-record") { add("pw_record", "ok", "pw-record is executable on PATH.", "") }
         else if onPath("parec") { add("pw_record", "ok", "pw-record is missing; parec (PulseAudio) will record instead.", "") }
         else { add("pw_record", "fail", "Neither pw-record nor parec is on PATH.", DistroFamily.detect().install(["pipewire-bin"], names: [.fedora: ["pipewire-utils"], .arch: ["pipewire"], .suse: ["pipewire-tools"]])) }
-        for check in LocalServers.checks(config.load().config, environment: environment) { add(check.name, check.status, check.detail, check.fix) }
+        for check in LocalServers.checks(loadedConfig.config, environment: environment) { add(check.name, check.status, check.detail, check.fix) }
         add("take_session", session == nil ? "ok" : "fail", session ?? "Take session is available.", "vizier status")
         return .object(["checks": .array(checks), "healthy": .bool(!checks.contains { $0["status"]?.string == "fail" })])
     }
+
+    private static func curlCheck(_ config: VizierConfig) -> (status: String, detail: String, fix: String) {
+        guard let version = loadedCurlVersion() else {
+            return ("fail", "Cannot inspect FoundationNetworking's loaded libcurl.", "vizier doctor")
+        }
+        let detail = "FoundationNetworking loaded libcurl \(version.text)."
+        if version.number >= 0x080b00 {
+            return ("ok", detail, "")
+        }
+        // On Linux every live transcriber uses WebSockets; batch and cleanup use HTTP.
+        let liveModes = config.settings.modes.filter { !$0.isBatchOnly }
+        if liveModes.isEmpty {
+            return ("ok", "\(detail) Configured modes only need batch HTTP support.", "")
+        }
+        let active = config.activeMode
+        let fix = "Install libcurl 8.11 or later from your distro, or use a batch mode: vizier config set mode <id>"
+        if !active.isBatchOnly {
+            return ("fail", "\(detail) The active mode (\(active.id)) needs libcurl 8.11 or later for live WebSockets. Batch engines remain available.", fix)
+        }
+        let names = liveModes.map(\.id).joined(separator: ", ")
+        return ("warn", "\(detail) The active mode (\(active.id)) works with this version; live modes (\(names)) need 8.11 or later for WebSockets.",
+                "Install libcurl 8.11 or later from your distro before switching to one of those modes.")
+    }
+
     /// Inspect the library actually referenced by FoundationNetworking, not `curl --version`.
     /// RTLD_NOLOAD avoids accidentally checking a different installed libcurl.
     public static func loadedCurlVersion() -> (text: String, number: UInt32)? {

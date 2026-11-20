@@ -14,6 +14,7 @@ private func installSecretTool(_ bins: FakeBins) -> String {
     cmd=$1; shift
     for a in "$@"; do acct=$a; done
     if [ -e '\(bins.directory)/locked' ]; then echo "secret-tool: Cannot get secret of a locked object" >&2; exit 1; fi
+    if [ "$cmd" = store ] && [ -e '\(bins.directory)/refuse-write' ]; then exit 1; fi
     case "$cmd" in
     lookup) if [ -f '\(vault)'/"$acct" ]; then cat '\(vault)'/"$acct"; exit 0; fi; exit 1;;
     store) cat > '\(vault)'/"$acct"; exit 0;;
@@ -101,6 +102,25 @@ private func mode(_ url: URL) -> mode_t {
         #expect(chmod(file.url.path, 0o600) == 0)
         try file.delete("gemini")
         #expect(try file.read("gemini") == nil)
+    }
+
+    @Test(arguments: ["locked", "refuse-write"])
+    func aFailedRotationWithAnExistingKeyDoesNotWriteAFile(_ failure: String) async throws {
+        let bins = FakeBins()
+        let vault = installSecretTool(bins)
+        let directory = configDirectory()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let original = URL(filePath: "\(vault)/gemini")
+        try Data("Zorblex".utf8).write(to: original)
+        let signal = URL(filePath: "\(bins.directory)/\(failure)")
+        try Data().write(to: signal)
+        let store = LinuxSecretStore(environment: bins.environment(), configDirectory: directory, secretServiceLocator: FakeLocator(bins))
+
+        await #expect(throws: SecretError.self) {
+            try await offThePool { try store.storeReporting("Quaxil", account: "gemini") }
+        }
+        #expect(!FileManager.default.fileExists(atPath: FileSecretStore(directory: directory).url.path))
+        #expect(try Data(contentsOf: original) == Data("Zorblex".utf8))
     }
 
     @Test func storingPrefersSecretServiceSendsTheKeyOnStdinAndFallsBackToTheFile() async throws {

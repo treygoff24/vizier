@@ -103,6 +103,14 @@ struct StatusPlate: View {
     var tone: FlapTone
     var small = false
 
+    init(_ take: TakeRecord, small: Bool = false) {
+        if take.isPractice {
+            self.init(text: "PRACTICE", tone: .plain, small: small)
+        } else {
+            self.init(take.outcome, small: small)
+        }
+    }
+
     init(_ outcome: TakeOutcome, small: Bool = false) {
         text = outcome.plateText
         tone = outcome.tone

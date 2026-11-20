@@ -34,6 +34,33 @@ import Testing
         #expect(!terms.contains(long))
     }
 
+    @Test func v3LiveGetsTheTermsPastTheKeytermsAsALibraryAndOtherModelsGetNone() {
+        let long = String(repeating: "x", count: 51)
+        let vocabulary = (1...60).map { "Term\($0)" } + ["A term of over twenty characters", long]
+        let v3 = ScribeRealtime.Setup(model: "scribe_v3_live", languages: [], vocabulary: vocabulary, noVerbatim: false)
+        #expect(ScribeRealtime.keytermLibrary(v3) == (51...60).map { "Term\($0)" } + ["A term of over twenty characters"])
+        let v2 = ScribeRealtime.Setup(model: "scribe_v2_realtime", languages: [], vocabulary: vocabulary, noVerbatim: false)
+        #expect(ScribeRealtime.keytermLibrary(v2).isEmpty)
+    }
+
+    @Test func vocabularyLimitsCountScalarsRatherThanGraphemes() throws {
+        func cluster(_ count: Int) -> String {
+            "Z" + String(repeating: "\u{0301}", count: count - 1)
+        }
+        let vocabulary = [20, 21, 50, 51].map(cluster)
+        let setup = ScribeRealtime.Setup(model: "scribe_v3_live", languages: [], vocabulary: vocabulary, noVerbatim: false)
+        let terms = query(ScribeRealtime.url(setup)).filter { $0.0 == "keyterms" }.map(\.1)
+        #expect(terms == [cluster(20)])
+        let firstFrame = try json(ScribeRealtime.encode(.audio(Data([0, 0])), library: ScribeRealtime.keytermLibrary(setup)))
+        #expect(firstFrame["keyterm_library"] as? [String] == [cluster(21), cluster(50)])
+    }
+
+    @Test func aLibraryRidesOnTheMessageItIsGivenTo() throws {
+        let first = try json(ScribeRealtime.encode(.audio(Data([0x01, 0x00])), library: ["Zorblex", "Quaxil"]))
+        #expect(first["keyterm_library"] as? [String] == ["Zorblex", "Quaxil"])
+        #expect(first["audio_base_64"] as? String == "AQA=")
+    }
+
     @Test func aPlusOrAmpersandInATermSurvivesTheURL() {
         let setup = ScribeRealtime.Setup(model: "m", languages: ["en"], vocabulary: ["Q++", "R&D"], noVerbatim: false)
         let url = ScribeRealtime.url(setup)
@@ -56,9 +83,9 @@ import Testing
             (#"{"message_type": "committed_transcript", "text": ""}"#, .committed("")),
             (#"{"message_type": "commit_throttled", "error": "Commit request ignored: only 0.00s of uncommitted audio."}"#, .commitIgnored),
             (#"{"message_type": "auth_error", "error": "You must be authenticated to use this endpoint."}"#,
-             .failed(type: "auth_error", message: "You must be authenticated to use this endpoint.")),
+             .failed(.authentication)),
             (#"{"message_type": "invalid_request", "error": "Invalid language code received: 'en-US'."}"#,
-             .failed(type: "invalid_request", message: "Invalid language code received: 'en-US'.")),
+             .failed(.invalidRequest)),
             (#"{"message_type": "committed_transcript_with_timestamps", "text": "Zorblex", "words": []}"#, .timed(text: "Zorblex", tokens: [])),
             (#"{"message_type": "committed_transcript_with_timestamps", "text": "Zorblex runs.", "words": [{"text": "Zorblex", "start": 30.06, "end": 30.5, "type": "word", "logprob": -0.1, "characters": ["Z"]}, {"text": " ", "start": 30.5, "end": 30.52, "type": "spacing"}, {"text": "runs.", "start": 30.52, "end": 30.9, "type": "word"}, {"text": "x", "type": "word"}]}"#,
              .timed(text: "Zorblex runs.", tokens: [.init("Zorblex", start: 30.06, end: 30.5), .init(" ", start: 30.5, end: 30.52, isWord: false),
@@ -323,7 +350,7 @@ import Testing
         _ = session.receive(.committed("Zorblex runs and-"))
         #expect(session.receive(.commitIgnored) == [])
         #expect(session.liveClosed("closed 1000: commit_throttled") == [.note("the live connection ended after its last answer: closed 1000: commit_throttled")])
-        #expect(session.receive(.failed(type: "transcriber_error", message: "late")) == [.note("the live connection ended after its last answer: transcriber_error: late")])
+        #expect(session.receive(.failed(.transcriber)) == [.note("the live connection ended after its last answer: transcriber_error")])
         #expect(session.repaired("Zorblex runs and the quaxil ships.").last == .done("Zorblex runs and the quaxil ships."))
     }
 
@@ -570,7 +597,7 @@ import Testing
 
     @Test func anErrorEndsTheTakeWithItsReason() {
         var session = ScribeRealtimeSession()
-        #expect(session.receive(.failed(type: "auth_error", message: "You must be authenticated.")) == [.failed("auth_error: You must be authenticated.")])
+        #expect(session.receive(.failed(.authentication)) == [.failed("auth_error")])
         #expect(session.receive(.sessionStarted) == [])
         #expect(session.end() == [])
     }

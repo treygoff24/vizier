@@ -98,6 +98,7 @@ final class SpeechModelModel {
     private(set) var state: State = .checking
     private(set) var locale: Locale
     @ObservationIgnored private let source: any SpeechModelSource
+    @ObservationIgnored private var requestID = UUID()
 
     init(source: any SpeechModelSource, state: State = .checking) {
         self.source = source
@@ -114,8 +115,14 @@ final class SpeechModelModel {
 
     func refresh() async {
         if case .downloading = state { return }
-        locale = source.preferredLocale()
-        switch await source.status(for: locale) {
+        let requested = source.preferredLocale()
+        let request = UUID()
+        requestID = request
+        locale = requested
+        state = .checking
+        let status = await source.status(for: requested)
+        guard requestID == request, requested.identifier == source.preferredLocale().identifier else { return }
+        switch status {
         case .installed: state = .installed
         case .notInstalled: state = .notInstalled
         case .unsupportedLocale: state = .unsupported
@@ -127,23 +134,31 @@ final class SpeechModelModel {
     /// state is read again for the new language, and the button reappears if that one is missing.
     func download() async {
         guard state == .notInstalled || isFailed else { return }
-        if source.preferredLocale().identifier != locale.identifier {
+        let requested = locale
+        if source.preferredLocale().identifier != requested.identifier {
             await refresh()
             return
         }
+        let request = UUID()
+        requestID = request
         state = .downloading(0)
         let box = ProgressBox { [weak self] value in
             // A report that lands after the download ended must not undo the result.
-            guard let self, case .downloading = self.state else { return }
+            guard let self, self.requestID == request, case .downloading = self.state else { return }
             self.state = .downloading(min(max(value, 0), 1))
         }
         do {
-            try await source.install(for: locale) { value in
+            try await source.install(for: requested) { value in
                 Task { @MainActor in box.report(value) }
             }
             state = .installed
         } catch {
             state = .failed(String(describing: error))
+        }
+        // The completed result belongs to the language we downloaded, not a mode selected
+        // in the meantime. A successful install already answers the status for that language.
+        if source.preferredLocale().identifier != requested.identifier {
+            await refresh()
         }
     }
 

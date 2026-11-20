@@ -265,12 +265,13 @@ public enum GeminiFiles {
                     let (body, response) = try await perform(request)
                     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                     guard status == 200 else {
-                        log.error("batch files: delete of \(name, privacy: .private) failed, HTTP \(status): \(GeminiBatch.errorMessage(from: body), privacy: .private)")
+                        let failure = ProviderFailure.http(status, detail: GeminiBatch.errorMessage(from: body))
+                        log.error("batch files: delete of \(name, privacy: .private) failed, \(failure, privacy: .public)")
                         return false
                     }
                     return true
                 } catch {
-                    log.error("batch files: delete of \(name, privacy: .private) failed: \(String(describing: error), privacy: .private)")
+                    log.error("batch files: delete of \(name, privacy: .private) failed: \(ProviderFailure.describe(error), privacy: .public)")
                     return false
                 }
             }.value

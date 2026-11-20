@@ -149,9 +149,8 @@ public final class LinuxPaster: PasteService {
         if let before = focusAtStop, let now = window?.pid, before != now {
             return PasteOutcome(kind: .held, method: "", reason: PasteDecision.focusMoved, onClipboard: true, permissionMissing: false, logCode: "held-focus-moved")
         }
-        guard stillWanted() else {
-            return PasteOutcome(kind: .withdrawn, method: "", reason: nil, onClipboard: true, permissionMissing: false, logCode: "withdrawn")
-        }
+        let withdrawn = PasteOutcome(kind: .withdrawn, method: "", reason: nil, onClipboard: true, permissionMissing: false, logCode: "withdrawn")
+        guard stillWanted() else { return withdrawn }
 
         // 3. The text must still be what the chord will paste: read the selection back last.
         if let readable = published as? any ClipboardReadable {
@@ -165,15 +164,19 @@ public final class LinuxPaster: PasteService {
         let chord: PasteChord = window?.isTerminal == true ? .ctrlShiftV : .ctrlV
         var sendFailures: [String] = []
         for sender in senders {
+            guard stillWanted() else { return withdrawn }
             do {
-                try await sender.send(chord)
+                try await sender.send(chord, stillWanted: stillWanted)
                 return PasteOutcome(kind: .pasted, method: sender.name, reason: nil, onClipboard: true, permissionMissing: false, logCode: sender.name)
+            } catch is PasteWithdrawn {
+                return withdrawn
             } catch let error as KeyDeliveryError {
                 return PasteOutcome(kind: .failed, method: sender.name, reason: error.description, onClipboard: true, permissionMissing: false, logCode: "failed-key-helper")
             } catch {
                 sendFailures.append("\(sender.name): \(error)")
             }
         }
+        guard stillWanted() else { return withdrawn }
         return PasteOutcome(kind: .failed, method: "", reason: "could not send the paste key (\(sendFailures.joined(separator: "; ")))", onClipboard: true, permissionMissing: false, logCode: "failed")
     }
 }

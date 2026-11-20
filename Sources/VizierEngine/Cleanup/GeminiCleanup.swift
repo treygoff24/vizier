@@ -98,9 +98,17 @@ public enum GeminiCleanup {
     public static func text(from response: Data) throws -> String {
         let decoded = try JSONDecoder().decode(Wire.Response.self, from: response)
         guard let candidate = decoded.candidates?.first else {
-            throw CleanupError.blocked(decoded.promptFeedback?.blockReason ?? "no candidates")
+            let reason = decoded.promptFeedback?.blockReason
+            let known = ProviderFailure.knownName(reason, among: ["SAFETY", "OTHER", "BLOCKLIST", "PROHIBITED_CONTENT", "IMAGE_SAFETY"])
+            throw CleanupError.blocked(known ?? (reason == nil ? "no candidates" : "unknown reason"))
         }
-        if let reason = candidate.finishReason, reason != "STOP" { throw CleanupError.unfinished(reason) }
+        if let reason = candidate.finishReason, reason != "STOP" {
+            let known = ProviderFailure.knownName(reason, among: [
+                "MAX_TOKENS", "SAFETY", "RECITATION", "LANGUAGE", "OTHER", "BLOCKLIST",
+                "PROHIBITED_CONTENT", "SPII", "MALFORMED_FUNCTION_CALL", "IMAGE_SAFETY",
+            ])
+            throw CleanupError.unfinished(known ?? "unknown reason")
+        }
         var text = (candidate.content?.parts ?? [])
             .filter { $0.thought != true }
             .compactMap(\.text)

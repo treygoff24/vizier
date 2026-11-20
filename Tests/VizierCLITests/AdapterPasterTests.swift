@@ -26,7 +26,8 @@ private struct FakeSender: KeySender {
     let log: Log
     var fails = false
     func probe() async -> AdapterProbe { AdapterProbe(name: name, available: true, detail: "") }
-    func send(_ chord: PasteChord) async throws {
+    func send(_ chord: PasteChord, stillWanted: @escaping @MainActor @Sendable () -> Bool) async throws {
+        guard await stillWanted() else { throw PasteWithdrawn() }
         log.add("send:\(name):\(chord.rawValue)")
         if fails { throw AdapterError("\(name) broke") }
     }
@@ -140,6 +141,46 @@ private struct FixedFocus: FocusReader {
         #expect(outcome.kind == .pasted)
     }
 
+    private struct CancellationClipboard: ClipboardReadable {
+        let name = "clipboard"
+        let onRead: @MainActor @Sendable () -> Void
+        func probe() async -> AdapterProbe { AdapterProbe(name: name, available: true, detail: "") }
+        func publish(_ text: String) async throws {}
+        func readBack(maxBytes: Int) async -> String? {
+            await onRead()
+            return "Zorblex"
+        }
+    }
+
+    private struct CancellationSender: KeySender {
+        let name: String
+        let log: Log
+        var beforeLaunch: (@MainActor @Sendable () -> Void)?
+        func probe() async -> AdapterProbe { AdapterProbe(name: name, available: true, detail: "") }
+        func send(_ chord: PasteChord, stillWanted: @escaping @MainActor @Sendable () -> Bool) async throws {
+            log.add(name)
+            guard await stillWanted() else { throw PasteWithdrawn() }
+            if let beforeLaunch {
+                await beforeLaunch()
+                throw AdapterError("synthetic launch failure")
+            }
+        }
+    }
+
+    @Test(arguments: [true, false])
+    func withdrawalDuringReadbackOrAFailedLaunchDoesNotInvokeTheNextSender(_ duringReadback: Bool) async {
+        var wanted = true
+        let plan = PastePlan(
+            writers: [CancellationClipboard(onRead: { if duringReadback { wanted = false } })],
+            senders: [CancellationSender(name: "first", log: log, beforeLaunch: {
+                if !duringReadback { wanted = false }
+            }), CancellationSender(name: "fallback", log: log)])
+        let paster = LinuxPaster(plan: plan, focus: FixedFocus(window: nil), prePasteDelay: .zero)
+        let outcome = await paster.paste("Zorblex", focusAtStop: nil, stillWanted: { wanted })
+        #expect(outcome.kind == .withdrawn)
+        #expect(log.all == (duringReadback ? [] : ["first"]))
+    }
+
     @Test func movedFocusHoldsWithTheSharedReason() async {
         let outcome = await paster([(false, false, "x")], focus: FocusedWindow(appName: "firefox", pid: 22, isTerminal: false))
             .paste("t", focusAtStop: 11, stillWanted: { true })
@@ -245,14 +286,14 @@ private struct FixedFocus: FocusReader {
         let bins = FakeBins()
         bins.add("slow", body: "sleep 5", reads: false)
         // Uncertain delivery at the deadline must not invite a second injector.
-        await #expect(throws: KeyDeliveryError.self) { try await Helper.send(["slow"], environment: bins.environment(), timeout: .milliseconds(200)) }
+        await #expect(throws: KeyDeliveryError.self) { try await Helper.send(["slow"], environment: bins.environment(), timeout: .milliseconds(200), stillWanted: { true }) }
         // A non-zero exit and a death by signal are post-spawn results too: events may already have been written.
         bins.add("bad", body: "echo 'compositor refuses' >&2; exit 1", reads: false)
-        await #expect(throws: KeyDeliveryError.self) { try await Helper.send(["bad"], environment: bins.environment()) }
+        await #expect(throws: KeyDeliveryError.self) { try await Helper.send(["bad"], environment: bins.environment(), stillWanted: { true }) }
         bins.add("killed", body: "kill -KILL $$", reads: false)
-        await #expect(throws: KeyDeliveryError.self) { try await Helper.send(["killed"], environment: bins.environment()) }
+        await #expect(throws: KeyDeliveryError.self) { try await Helper.send(["killed"], environment: bins.environment(), stillWanted: { true }) }
         // Only a helper that could not be spawned at all sent nothing.
-        await #expect(throws: AdapterError.self) { try await Helper.send(["vizier-absent"], environment: bins.environment()) }
+        await #expect(throws: AdapterError.self) { try await Helper.send(["vizier-absent"], environment: bins.environment(), stillWanted: { true }) }
     }
 
     @Test func aSenderThatDeliveredThenExitedNonZeroIsNotFollowedByAnotherSender() async {

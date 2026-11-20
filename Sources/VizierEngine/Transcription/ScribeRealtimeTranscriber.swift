@@ -6,7 +6,7 @@ import FoundationNetworking
 import os
 #endif
 
-/// Streams one take to ElevenLabs Scribe v2 Realtime over a WebSocket. The protocol decisions live
+/// Streams one take to ElevenLabs Scribe v3 Live or v2 Realtime over a WebSocket. The protocol decisions live
 /// in `ScribeRealtimeSession`; this class moves bytes, keeps them in order, and turns every way the
 /// connection can fail into one `TranscriberError`. It mirrors `GeminiLiveTranscriber`.
 ///
@@ -28,6 +28,8 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
     private final class Link: @unchecked Sendable {
         let socket: URLSessionWebSocketTask
         var outbox: [Data] = []
+        /// False until the first message is queued; that message carries the keyterm library.
+        var opened = false
         var sending = false
         var ready = false
         /// Raw PCM accepted for this link, including audio held until session_started.
@@ -209,7 +211,10 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
 
     private func enqueue(_ messages: [ScribeRealtime.ClientMessage], on link: Link) -> Bool {
         do {
-            link.outbox += try messages.map(ScribeRealtime.encode)
+            for message in messages {
+                link.outbox.append(try ScribeRealtime.encode(message, library: link.opened ? [] : ScribeRealtime.keytermLibrary(setup)))
+                link.opened = true
+            }
         } catch {
             return false
         }
@@ -227,7 +232,7 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
             queue.async { [self] in
                 link.sending = false
                 if let error {
-                    lost(link, Self.describe(error, on: link.socket))
+                    lost(link, ProviderFailure.describe(error, on: link.socket))
                 } else if isOpen(link) {
                     pump(link)
                 }
@@ -242,7 +247,7 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
                 guard isOpen(link), outcome == nil else { return }
                 switch result {
                 case .failure(let error):
-                    lost(link, Self.describe(error, on: link.socket))
+                    lost(link, ProviderFailure.describe(error, on: link.socket))
                 case .success(let message):
                     handle(message, from: link)
                     receive(on: link)
@@ -278,7 +283,7 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
         do {
             event = try ScribeRealtime.decode(frame)
         } catch {
-            log.error("unreadable server frame of \(frame.count, privacy: .public) bytes: \(String(describing: error), privacy: .private)")
+            log.error("unreadable server frame of \(frame.count, privacy: .public) bytes")
             return
         }
         if link === repair {
@@ -352,8 +357,8 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
             apply(session.repaired(text))
         case .commitIgnored:
             endRepair(failure: "the server ignored the repair's commit")
-        case .failed(let type, let message):
-            endRepair(failure: "\(type): \(message)")
+        case .failed(let failure):
+            endRepair(failure: failure.rawValue)
         case .partial, .timed, .ignored:
             break
         }
@@ -398,21 +403,5 @@ public final class ScribeRealtimeTranscriber: LiveTranscriber, @unchecked Sendab
         onEvent = nil
         waiter?.resume(with: result.mapError { $0 as Error })
         waiter = nil
-    }
-
-    /// The server puts its reason in the close frame (after an error event, which the session has
-    /// usually reported already), and a refused upgrade shows up only as the HTTP status.
-    private static func describe(_ error: Error, on socket: URLSessionWebSocketTask) -> String {
-        var parts: [String] = []
-        if socket.closeCode != .invalid {
-            parts.append("closed \(socket.closeCode.rawValue)")
-            if let reason = socket.closeReason, let text = String(data: reason, encoding: .utf8), !text.isEmpty {
-                parts.append(text)
-            }
-        } else if let http = socket.response as? HTTPURLResponse, http.statusCode != 101 {
-            parts.append("HTTP \(http.statusCode)")
-        }
-        parts.append((error as NSError).localizedDescription)
-        return parts.joined(separator: ": ")
     }
 }

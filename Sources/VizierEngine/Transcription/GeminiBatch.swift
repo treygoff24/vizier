@@ -45,9 +45,9 @@ public enum BatchError: Error, Equatable, Sendable, CustomStringConvertible {
     /// Past the model's one-hour limit. Nothing was sent; the audio stays on disk.
     case tooLong(seconds: Int)
     /// The transcription request failed.
-    case http(status: Int, message: String)
+    case http(status: Int, message: String? = nil)
     /// Sending the audio to the Files API failed. Nothing was transcribed.
-    case upload(status: Int, message: String)
+    case upload(status: Int, message: String? = nil)
     /// The uploaded file never became usable (it failed processing, or was still processing).
     case fileNotReady(state: String)
     case incomplete(status: String)
@@ -55,8 +55,8 @@ public enum BatchError: Error, Equatable, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case .tooLong(let seconds): "the take's audio (\(seconds) s) is past the model's one-hour limit"
-        case .http(let status, let message): "HTTP \(status): \(message)"
-        case .upload(let status, let message): "upload failed, HTTP \(status): \(message)"
+        case .http(let status, let message): ProviderFailure.http(status, detail: message)
+        case .upload(let status, let message): "upload failed, \(ProviderFailure.http(status, detail: message))"
         case .fileNotReady(let state): "the uploaded audio is \(state), not ACTIVE"
         case .incomplete(let status): "the interaction ended with status \(status)"
         }
@@ -135,16 +135,22 @@ public enum GeminiBatch {
         switch interaction.status {
         case nil, "completed": return BatchTranscript(text: text, truncated: false)
         case "incomplete" where !text.isEmpty: return BatchTranscript(text: text, truncated: true)
-        case let status?: throw BatchError.incomplete(status: status)
+        case "incomplete": throw BatchError.incomplete(status: "incomplete")
+        case let status?:
+            let name = ProviderFailure.knownName(status, among: ["failed", "cancelled", "in_progress", "requires_action"])
+            throw BatchError.incomplete(status: name ?? "unknown")
         }
     }
 
-    /// The message in a Google API error body, or the raw body when it has another shape.
-    public static func errorMessage(from body: Data) -> String {
-        if let error = try? JSONDecoder().decode(Wire.ErrorBody.self, from: body) {
-            return [error.error.status, error.error.message].compactMap { $0 }.joined(separator: ": ")
-        }
-        return String(decoding: body.prefix(300), as: UTF8.self)
+    /// Keep recognized RPC status names only; messages may repeat vocabulary or transcript text.
+    public static func errorMessage(from body: Data) -> String? {
+        let status = (try? JSONDecoder().decode(Wire.ErrorBody.self, from: body))?.error.status
+        return ProviderFailure.knownName(status, among: [
+            "CANCELLED", "UNKNOWN", "INVALID_ARGUMENT", "DEADLINE_EXCEEDED", "NOT_FOUND",
+            "ALREADY_EXISTS", "PERMISSION_DENIED", "RESOURCE_EXHAUSTED", "FAILED_PRECONDITION",
+            "ABORTED", "OUT_OF_RANGE", "UNIMPLEMENTED", "INTERNAL", "UNAVAILABLE",
+            "DATA_LOSS", "UNAUTHENTICATED",
+        ])
     }
 
     private enum Wire {
@@ -182,7 +188,6 @@ public enum GeminiBatch {
         }
         struct ErrorBody: Decodable {
             struct Detail: Decodable {
-                var message: String?
                 var status: String?
             }
             var error: Detail

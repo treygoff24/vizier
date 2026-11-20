@@ -112,8 +112,14 @@ public protocol TakePresentation: AnyObject {
     func streamLost(remark: String)
     /// The take stopped; delivery is on time if it lands within `onTime` seconds.
     func stopped(onTime: TimeInterval)
+    /// The stopped take has incomplete audio. This precedes transcription and delivery.
+    func recordingInterrupted(remark: String)
     func reroutingToBatch()
     func finish(_ result: TakeResult, remark: String?)
+}
+
+public extension TakePresentation {
+    func recordingInterrupted(remark: String) { raiseAlert() }
 }
 
 public enum TakeSound: String, Sendable, CaseIterable {

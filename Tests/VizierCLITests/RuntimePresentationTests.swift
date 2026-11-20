@@ -32,9 +32,10 @@ final class GatedSink: NotificationSink, @unchecked Sendable {
     private let lock = NSLock()
     private var entered = 0
     private var released = false
-    private var shown: [String] = []
+    private var shown: [DesktopNotification] = []
 
-    var summaries: [String] { lock.withLock { shown } }
+    var notifications: [DesktopNotification] { lock.withLock { shown } }
+    var summaries: [String] { notifications.map(\.summary) }
     func release() { lock.withLock { released = true } }
     func waitUntilEntered(_ count: Int) async {
         for _ in 0..<200 {
@@ -46,7 +47,7 @@ final class GatedSink: NotificationSink, @unchecked Sendable {
     func notify(_ notification: DesktopNotification, replacing id: UInt32?) async throws -> UInt32? {
         let first = lock.withLock { entered += 1; return entered == 1 }
         while first && !lock.withLock({ released }) { try? await Task.sleep(for: .milliseconds(10)) }
-        lock.withLock { shown.append(notification.summary) }
+        lock.withLock { shown.append(notification) }
         return 1
     }
 }
@@ -131,6 +132,40 @@ final class GatedSink: NotificationSink, @unchecked Sendable {
         sink.release()
         await presentation.drain()
         #expect(sink.summaries == ["Vizier: recording", "Vizier: pasted"])
+    }
+
+    @Test func anInterruptedTakeKeepsItsNoticeThroughRerouteButNotIntoTheNextTake() async {
+        let remark = TakeRemarks.captureEnded
+        let immediate = RecordingSink()
+        let fast = LinuxPresentation(sink: immediate, modeName: { "Local" })
+        fast.begin(destination: "", platform: "LO", level: { 0 }, seconds: { 0 })
+        await fast.drain()
+        fast.stopped(onTime: 1)
+        // Call through the same interface as TakeSession.
+        let presentation: any TakePresentation = fast
+        presentation.recordingInterrupted(remark: remark)
+        await fast.drain()
+        #expect(immediate.calls.last?.notification.body == remark)
+
+        let stalled = GatedSink()
+        let slow = LinuxPresentation(sink: stalled, modeName: { "Local" })
+        slow.begin(destination: "", platform: "LO", level: { 0 }, seconds: { 0 })
+        await stalled.waitUntilEntered(1)
+        slow.stopped(onTime: 1)
+        slow.recordingInterrupted(remark: remark)
+        slow.reroutingToBatch()
+        stalled.release()
+        await slow.drain()
+        #expect(stalled.notifications.count == 2)
+        #expect(stalled.notifications.last?.body.contains(remark) == true)
+
+        slow.finish(.held, remark: remark)
+        await slow.drain()
+        slow.begin(destination: "", platform: "LO", level: { 0 }, seconds: { 0 })
+        slow.stopped(onTime: 1)
+        slow.reroutingToBatch()
+        await slow.drain()
+        #expect(stalled.notifications.last?.body.contains(remark) == false)
     }
 
     @Test func noSinkShowsNothingAndNeverBlocks() async {

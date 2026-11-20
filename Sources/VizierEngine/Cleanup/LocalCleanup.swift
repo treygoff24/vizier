@@ -23,7 +23,10 @@ public enum LocalCleanup {
         guard let choice = decoded.choices.first, let content = choice.message.content else {
             throw CleanupError.blocked("no answer")
         }
-        if let reason = choice.finishReason, reason != "stop" { throw CleanupError.unfinished(reason) }
+        if let reason = choice.finishReason, reason != "stop" {
+            let known = ProviderFailure.knownName(reason, among: ["length", "content_filter", "tool_calls", "function_call"])
+            throw CleanupError.unfinished(known ?? "unknown reason")
+        }
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -77,7 +80,7 @@ public struct LocalCleaner: TextCleaner {
         request.httpBody = try LocalCleanup.requestBody(transcript: transcript, model: model)
         let (body, response) = try await perform(request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else { throw CleanupError.http(status: status, message: String(decoding: body.prefix(300), as: UTF8.self)) }
+        guard status == 200 else { throw CleanupError.http(status: status) }
         return try LocalCleanup.text(from: body)
     }
 }

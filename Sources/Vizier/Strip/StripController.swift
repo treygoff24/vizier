@@ -71,7 +71,7 @@ final class StripController {
     /// How long finalizing may take before the flap reads DELAYED.
     private var onTime: CFTimeInterval = 1
     private var lastFrame: CFTimeInterval = 0
-    private var displayLink: CADisplayLink?
+    private lazy var refresh = StripRefreshClock { [weak self] now in self?.frame(at: now) }
     private var width: CGFloat = 0
 
     /// Builds the panel at launch so the first take shows in one frame.
@@ -114,7 +114,8 @@ final class StripController {
             if let frame = place() { panel.animator().setFrame(frame, display: false) }
         }
         panel.orderFrontRegardless()
-        startFrames()
+        lastFrame = CACurrentMediaTime()
+        refresh.record(in: panel.contentView!)
         announce("Recording to \(destination)")
     }
 
@@ -146,8 +147,16 @@ final class StripController {
         live = false
         lampView.level = nil
         stoppedAt = CACurrentMediaTime()
+        stripView.state.seconds = Int(seconds())
+        refresh.finalize()
         if !streamLost { stripView.state.status = nil }
         setRemarks(nil)
+    }
+
+    func recordingInterrupted(remark: String) {
+        guard phase == .finalizing else { return }
+        setRemarks(remark)
+        announce(remark)
     }
 
     func reroutingToBatch() {
@@ -170,7 +179,7 @@ final class StripController {
         stripView.state.status = outcome.status
         let shown = outcome == .pasted || outcome == .cancelled ? nil : remark
         setRemarks(shown)
-        stopFrames()
+        refresh.stop()
         announce([outcome.status.text, shown].compactMap(\.self).joined(separator: ". "))
         let generation = generation
         Task { [weak self] in
@@ -181,26 +190,13 @@ final class StripController {
 
     // MARK: Frames
 
-    private func startFrames() {
-        guard displayLink == nil, let view = panel.contentView else { return }
-        lastFrame = CACurrentMediaTime()
-        let link = view.displayLink(target: self, selector: #selector(frame(_:)))
-        link.add(to: .main, forMode: .common)
-        displayLink = link
-    }
-
-    private func stopFrames() {
-        displayLink?.invalidate()
-        displayLink = nil
-    }
-
-    @objc private func frame(_ link: CADisplayLink) {
-        let now = CACurrentMediaTime()
+    private func frame(at now: CFTimeInterval) {
         let dt = now - lastFrame
         lastFrame = now
-        if live { lampView.level = meter.step(meanSquare: level(), seconds: dt) }
-        let captured = Int(seconds())
-        if stripView.state.seconds != captured { stripView.state.seconds = captured }
+        if phase == .recording {
+            if live { lampView.level = meter.step(meanSquare: level(), seconds: dt) }
+            stripView.state.seconds = Int(seconds())
+        }
         if phase == .finalizing { updateFinalizing(at: now) }
     }
 
@@ -289,5 +285,52 @@ final class StripController {
             .announcement: text,
             .priority: NSAccessibilityPriorityLevel.high.rawValue,
         ])
+    }
+}
+
+/// The strip needs a smooth meter while recording and only a half-second clock while finishing.
+/// The target never retains this owner, so both schedules stop when their owner goes away.
+final class StripRefreshClock {
+    private final class Target: NSObject {
+        let tick: (CFTimeInterval) -> Void
+        init(tick: @escaping (CFTimeInterval) -> Void) { self.tick = tick }
+        @objc func frame() { tick(CACurrentMediaTime()) }
+    }
+
+    private let target: Target
+    private(set) var displayLink: CADisplayLink?
+    private(set) var timer: Timer?
+
+    init(tick: @escaping (CFTimeInterval) -> Void) { target = Target(tick: tick) }
+
+    isolated deinit {
+        displayLink?.invalidate()
+        timer?.invalidate()
+    }
+
+    func record(in view: NSView) {
+        stop()
+        let link = view.displayLink(target: target, selector: #selector(Target.frame))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+    }
+
+    func finalize() {
+        stop()
+        let target = target
+        let timer = Timer(timeInterval: 0.5, repeats: true) { _ in
+            MainActor.assumeIsolated { target.frame() }
+        }
+        timer.tolerance = 0.05
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    func stop() {
+        displayLink?.invalidate()
+        displayLink = nil
+        timer?.invalidate()
+        timer = nil
     }
 }

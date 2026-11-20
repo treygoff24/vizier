@@ -81,8 +81,8 @@ import Testing
 
     @Test func errorBodiesGiveTheirStatusAndMessage() {
         let body = #"{"error": {"code": 400, "message": "Invalid audio.", "status": "INVALID_ARGUMENT"}}"#
-        #expect(GeminiBatch.errorMessage(from: Data(body.utf8)) == "INVALID_ARGUMENT: Invalid audio.")
-        #expect(GeminiBatch.errorMessage(from: Data("<html>bad gateway</html>".utf8)) == "<html>bad gateway</html>")
+        #expect(GeminiBatch.errorMessage(from: Data(body.utf8)) == "INVALID_ARGUMENT")
+        #expect(GeminiBatch.errorMessage(from: Data("<html>bad gateway</html>".utf8)) == nil)
     }
 
     @Test func theLargestInlineTakeWithAFullVocabularyStaysUnderTwentyMegabytes() throws {

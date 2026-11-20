@@ -5,8 +5,10 @@ import Glibc
 
 private struct CosmicTestFocus: FocusReader {
     let terminal: Bool?
+    var onRead: (@MainActor @Sendable () -> Void)?
     func focusedWindow() async -> FocusedWindow? {
-        terminal.map { FocusedWindow(appName: "fixture", pid: nil, isTerminal: $0) }
+        if let onRead { await onRead() }
+        return terminal.map { FocusedWindow(appName: "fixture", pid: nil, isTerminal: $0) }
     }
 }
 
@@ -65,6 +67,20 @@ private struct CosmicTestFocus: FocusReader {
         }
         #expect(bins.argv("ydotool").count == 2)
         #expect(bins.socketSeen("ydotool") == socket.path)
+        withExtendedLifetime(socket) {}
+    }
+
+    @Test @MainActor func withdrawalDuringCosmicFocusReadDoesNotLaunchTheHelper() async throws {
+        let bins = FakeBins()
+        bins.add("ydotool", reads: false)
+        let socket = SocketFixture(in: bins.directory)
+        let env = bins.env(["YDOTOOL_SOCKET": socket.path])
+        var wanted = true
+        let sender = CosmicKeySender(env: env, focus: CosmicTestFocus(terminal: true, onRead: { wanted = false }))
+        await #expect(throws: PasteWithdrawn.self) {
+            try await sender.send(.ctrlV, stillWanted: { wanted })
+        }
+        #expect(bins.argv("ydotool").isEmpty)
         withExtendedLifetime(socket) {}
     }
 

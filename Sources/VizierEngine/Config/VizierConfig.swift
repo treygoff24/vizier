@@ -129,7 +129,7 @@ public struct VizierConfig: Sendable, Equatable {
         public static var scribe: Mode { Mode(
             id: "scribe",
             name: "Scribe",
-            transcriber: Transcriber(engine: "elevenlabs-scribe-realtime", model: "scribe_v2_realtime", mode: "verbatim", languages: systemLanguages, finalTimeoutMs: 4_000),
+            transcriber: Transcriber(engine: "elevenlabs-scribe-realtime", model: ScribeRealtime.defaultModel, mode: "verbatim", languages: systemLanguages, finalTimeoutMs: 4_000),
             fallback: Fallback(engine: "gemini-batch", model: "gemini-3.5-transcribe", mode: "verbatim"),
             removeFillers: true,
             offlineFallback: builtInOfflineFallback) }
@@ -267,18 +267,18 @@ public enum ModeWriteError: Error, Equatable, CustomStringConvertible, Sendable 
     }
 }
 
-/// Loads the config directory, validating every file on every load. A broken file never replaces
-/// a working config: the store keeps running the last good one and reports what broke.
+/// Validates every file on every load. A broken file leaves its own last good value in place;
+/// edits to the other files still take effect.
 public final class ConfigStore: @unchecked Sendable {
     public struct Load: Sendable {
         public var config: VizierConfig
-        /// Empty when every file loaded. Otherwise the config is the last good one (or the defaults).
+        /// Empty when every file loaded. Each failing file uses its last good value (or its default).
         public var errors: [ConfigError]
     }
 
     public let directory: URL
     private let lock = NSLock()
-    private var lastGood: VizierConfig?
+    private var lastGood = VizierConfig()
 
     /// Gemini accepts at most 1,000 vocabulary terms.
     public static let maxVocabularyTerms = 1_000
@@ -304,21 +304,20 @@ public final class ConfigStore: @unchecked Sendable {
     public var replacementsURL: URL { directory.appending(path: "replacements.txt") }
 
     public func load() -> Load {
-        var errors: [ConfigError] = []
-        var config = VizierConfig()
-        do { config.settings = try Self.parseSettings(read(settingsURL)) } catch { errors.append(error) }
-        do { config.vocabulary = try Self.parseVocabulary(read(vocabularyURL)) } catch { errors.append(error) }
-        do {
-            config.replacements = try ReplacementsFile.parse(read(replacementsURL) ?? "")
-        } catch {
-            errors.append(.replacements(error.description))
-        }
-        return lock.withLock {
-            if errors.isEmpty {
-                lastGood = config
-                return Load(config: config, errors: [])
+        lock.withLock {
+            var errors: [ConfigError] = []
+            do throws(ConfigError) { lastGood.settings = try Self.parseSettings(read(settingsURL, as: ConfigError.settings)) }
+            catch { errors.append(error) }
+            do throws(ConfigError) { lastGood.vocabulary = try Self.parseVocabulary(read(vocabularyURL, as: ConfigError.vocabulary)) }
+            catch { errors.append(error) }
+            do throws(ConfigError) {
+                let text = try read(replacementsURL) { .replacements("replacements.txt: \($0)") }
+                do throws(ReplacementsFile.LineError) { lastGood.replacements = try ReplacementsFile.parse(text ?? "") }
+                catch { errors.append(.replacements(error.description)) }
+            } catch {
+                errors.append(error)
             }
-            return Load(config: lastGood ?? VizierConfig(), errors: errors)
+            return Load(config: lastGood, errors: errors)
         }
     }
 
@@ -328,7 +327,7 @@ public final class ConfigStore: @unchecked Sendable {
         try PrivateFiles.makeDirectory(directory)
         let starters: [(URL, String)] = [
             (settingsURL, Self.starterSettings),
-            (vocabularyURL, "# One term per line. Gemini gets up to 1,000 as custom vocabulary; Scribe gets the first 50 of at most 20 characters.\n"),
+            (vocabularyURL, "# One term per line. Put the terms that matter most first. See docs/vocabulary-and-replacements.md for each engine's limits.\n"),
             (replacementsURL, "# One rule per line: variant, another variant -> replacement\n# Whole words, any case. A line starting with # is a comment.\n"),
         ]
         for (url, text) in starters {
@@ -392,12 +391,18 @@ public final class ConfigStore: @unchecked Sendable {
             // Linux's atomic replace writes a temp file with the default mode (0644) and renames it over; Darwin keeps 0600.
             PrivateFiles.tighten(settingsURL)
             #endif
+            lastGood.settings = settings
             return SettingsSnapshot(bytes: bytes, settings: settings)
         }
     }
 
-    private func read(_ url: URL) -> String? {
-        try? String(contentsOf: url, encoding: .utf8)
+    private func read(_ url: URL, as configError: (String) -> ConfigError) throws(ConfigError) -> String? {
+        let bytes: Data
+        do { bytes = try Data(contentsOf: url) }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile { return nil }
+        catch { throw configError("could not read the file (error \((error as NSError).code))") }
+        guard let text = String(data: bytes, encoding: .utf8) else { throw configError("the file is not UTF-8") }
+        return text
     }
 
     static func parseSettings(_ text: String?) throws(ConfigError) -> VizierConfig.Settings {
@@ -464,6 +469,12 @@ public final class ConfigStore: @unchecked Sendable {
                 }
                 guard let parsed = URL(string: url), Loopback.allows(parsed) else {
                     throw .settings("mode \"\(mode.id)\" points \"\(engine)\" at \(url); a local engine must use http on 127.0.0.1 or [::1]")
+                }
+                // Foundation reports nil both for an omitted port and for digits that overflow Int.
+                if let portRange = URLComponents(url: parsed, resolvingAgainstBaseURL: false)?.rangeOfPort, !portRange.isEmpty {
+                    guard let port = parsed.port, (1...Int(UInt16.max)).contains(port) else {
+                        throw .settings("mode \"\(mode.id)\" gives \"\(engine)\" a port outside 1–65535; correct the port or omit it for HTTP port 80")
+                    }
                 }
             }
             // Scribe batch has no mode setting; it transcribes verbatim, and the filler filter runs after.
@@ -560,7 +571,7 @@ public final class ConfigStore: @unchecked Sendable {
               "name": "Scribe",
               "transcriber": {
                 "engine": "elevenlabs-scribe-realtime",
-                "model": "scribe_v2_realtime",
+                "model": "\(ScribeRealtime.defaultModel)",
                 "mode": "verbatim",
                 "languages": \(languages),
                 "final_timeout_ms": 4000,
@@ -640,7 +651,7 @@ public final class ConfigStore: @unchecked Sendable {
               "name": "Scribe",
               "transcriber": {
                 "engine": "elevenlabs-scribe-realtime",
-                "model": "scribe_v2_realtime",
+                "model": "\(ScribeRealtime.defaultModel)",
                 // "verbatim" keeps every word; "no_verbatim" lets Scribe drop fillers and false starts itself.
                 "mode": "verbatim",
                 // [] lets Scribe detect the language.

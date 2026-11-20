@@ -1,11 +1,12 @@
 # Linux release packages
 
-Build on amd64 Debian 13 with Swift 6.4 installed by swiftly, Docker and `testrun`:
+Build on amd64 Debian 13 with Swift 6.4 installed by swiftly, Docker, binutils,
+and the Wayland development headers (`libwayland-dev`):
 
 ```sh
 scripts/linux/package/build-deb.sh
 scripts/linux/package/build-appimage.sh
-testrun dictum linux-package-install -- scripts/linux/package/test-install.sh
+scripts/linux/package/test-install.sh
 ```
 
 The version defaults to `MARKETING_VERSION` in the repository's `VERSION` file. A first argument
@@ -27,7 +28,7 @@ checked with `ldd` too: missing or dynamically linked Swift libraries fail.
 
 The verified Swift 6.4 release statically includes Swift, Foundation, Dispatch,
 BlocksRuntime and ICU (including its data). There is no Swift toolchain or ICU
-runtime package dependency. CPipe2 is a header shim.
+runtime package dependency.
 
 ELF NEEDED: `libwayland-client.so.0`, `libsqlite3.so.0`, `libcurl.so.4`, `libm.so.6`, `libstdc++.so.6`,
 `libgcc_s.so.1`, `libc.so.6`, `ld-linux-x86-64.so.2`. Desktop D-Bus additionally
@@ -39,7 +40,7 @@ The Debian package derives Depends from the actual ELF; a representative set is:
 
 ```text
 libwayland-client0 (>= 1.20.0), libc6 (>= 2.38), libcurl4t64 (>= 7.86.0) | libcurl4 (>= 7.86.0),
-libgcc-s1 (>= 3.3.1), libsqlite3-0 (>= 3.7.14), libstdc++6 (>= 12),
+libgcc-s1 (>= 3.3.1), libsqlite3-0 (>= 3.7.14), libstdc++6 (>= 13.1),
 libsystemd0, ca-certificates
 ```
 
@@ -80,19 +81,16 @@ Lintian rejected the incomplete dependency declaration, and the clean-install
 smoke test failed at version startup because libcurl.so.4 was missing. The
 declaration was restored before the final green run.
 
-## Integration follow-ups
+## Desktop integration and known limits
 
-- `vizier setup` currently installs a user service but no desktop entry. AppImage
-  cannot install its desktop entry automatically. Setup must install
-  `net.praxient.vizier.desktop` for portal registration, and use the persistent
-  AppImage path for service startup rather than a temporary extraction path.
-- This application build's doctor has no desktop check (setup has one). The test
-  reports that absence explicitly; capture/server failures and no crash are proven.
-- Lintian's remaining `hardening-no-relro` warning comes from the Swift-linked
-  executable. The build requests RELRO and immediate binding, but this toolchain
-  emits BIND_NOW without a GNU_RELRO segment. Appimagetool also warns that optional
-  AppStream metadata is absent. Desktop portals and real audio remain unverified.
-- These files are Linux packaging only. There are no macOS-visible source edits.
+- Keep the AppImage in its permanent location before running it with `setup`.
+  Setup registers `net.praxient.vizier.desktop` for the portals and sets the
+  service's executable to the AppImage, so it keeps working after the temporary
+  mount goes away. The deb includes the desktop entry and user unit.
+- Doctor checks that the desktop entry exists. Run `vizier setup` in a desktop
+  session to check paste and shortcut support.
+- Appimagetool warns that optional AppStream metadata is absent. The clean-install
+  checks do not exercise real desktop portals or microphone audio.
 
 COSMIC support links libwayland-client into the Linux executable; `.deb` dependencies
 are discovered by `dpkg-shlibdeps`. Source builds also need `libwayland-dev`.

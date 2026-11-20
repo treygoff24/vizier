@@ -231,6 +231,25 @@ private func tempRoot() -> URL {
         #expect(entryCheck()?["status"] == .string("ok"))
     }
 
+    @Test(.enabled(if: Doctor.loadedCurlVersion().map { $0.number < 0x080b00 } == true,
+                   "requires FoundationNetworking to load libcurl before 8.11"))
+    func doctorOnOldLibcurlOnlyFailsWhenTheActiveModeNeedsWebSockets() throws {
+        let root = tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let config = ConfigStore(directory: root)
+        try config.writeStarterFilesIfMissing()
+        let batch = #"{"id":"batch","name":"Batch","transcriber":{"engine":"gemini-batch","model":"m","mode":"verbatim","languages":[],"final_timeout_ms":1000}}"#
+        let live = #"{"id":"live","name":"Live","transcriber":{"engine":"gemini-live","model":"m","mode":"SMART","languages":[],"final_timeout_ms":1000}}"#
+        for (modes, active, status) in [(batch, "batch", "ok"), (batch + "," + live, "batch", "warn"), (batch + "," + live, "live", "fail")] {
+            try Data(#"{"mode":"\#(active)","modes":[\#(modes)]}"#.utf8).write(to: config.settingsURL)
+            try #require(config.load().errors.isEmpty)
+            let report = Doctor.report(config: config, historyURL: root.appending(path: "h.sqlite"),
+                                       takesRoot: root.appending(path: "Takes"), environment: ["PATH": "/nonexistent"],
+                                       probeSocket: false)
+            #expect(checks(report)["libcurl"]?["status"] == .string(status))
+        }
+    }
+
     @Test func localWhisperIsCheckedOnLoopbackWithAFixThatNamesTheServerAndTheModel() async throws {
         let root = tempRoot(); defer { try? FileManager.default.removeItem(at: root) }
         let bins = FakeBins()

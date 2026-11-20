@@ -21,6 +21,32 @@ public enum Engines {
         return engine.hasPrefix("elevenlabs-") ? .elevenLabs : .gemini
     }
 
+    /// Which configured terms the mode's primary recognizer leaves out. The codecs that build
+    /// the requests own the limits; this report uses the same selections as those requests.
+    public static func omittedVocabulary(in config: VizierConfig) -> [String] {
+        let vocabulary = config.vocabulary
+        let transcriber = config.activeMode.transcriber
+        let sent: [String]
+        switch transcriber.engine {
+        case "elevenlabs-scribe-realtime":
+            let setup = ScribeRealtime.Setup(model: transcriber.model, languages: transcriber.languages,
+                                            vocabulary: vocabulary, noVerbatim: transcriber.mode == "no_verbatim")
+            sent = ScribeRealtime.keyterms(vocabulary) + ScribeRealtime.keytermLibrary(setup)
+        case "elevenlabs-scribe-batch":
+            sent = ScribeBatch.keyterms(vocabulary)
+        case "assemblyai-realtime":
+            sent = AssemblyAIRealtime.keyterms(vocabulary)
+        case "soniox-realtime":
+            sent = SonioxRealtime.terms(vocabulary)
+        case "gemini-live", "gemini-batch":
+            return []
+        default:
+            return vocabulary
+        }
+        let included = Set(sent)
+        return vocabulary.filter { !included.contains($0) }
+    }
+
     /// A batch transcriber for one link of a mode's chain. `key` is nil only for a local engine;
     /// a cloud engine with no key gets no transcriber.
     public static func batch(_ spec: VizierConfig.Fallback, languages: [String], vocabulary: [String], key: String?) -> (any BatchTranscriber)? {
